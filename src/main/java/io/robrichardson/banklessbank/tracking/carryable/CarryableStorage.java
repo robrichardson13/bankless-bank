@@ -1,0 +1,58 @@
+/*
+ * Ported from "Dude, Where's My Stuff?" by Thource (https://github.com/Thource/dude-wheres-my-stuff)
+ * Copyright (c) 2022, Thource. Licensed under the BSD 2-Clause License.
+ */
+package io.robrichardson.banklessbank.tracking.carryable;
+
+import io.robrichardson.banklessbank.BanklessBankPlugin;
+import io.robrichardson.banklessbank.tracking.ItemStack;
+import io.robrichardson.banklessbank.tracking.ItemStorage;
+import lombok.Getter;
+import net.runelite.api.EquipmentInventorySlot;
+import net.runelite.api.events.ItemContainerChanged;
+
+/**
+ * CarryableStorage is responsible for tracking storages that the player can carry (looting bag,
+ * rune pouch, etc).
+ */
+@Getter
+public class CarryableStorage extends ItemStorage<CarryableStorageType> {
+
+  protected CarryableStorage(CarryableStorageType type, BanklessBankPlugin plugin) {
+    super(type, plugin);
+  }
+
+  @Override
+  public boolean onGameTick() {
+    boolean updated = super.onGameTick();
+
+    if (type == CarryableStorageType.EQUIPMENT && updated) {
+      ItemStack empty = new ItemStack(-1, "empty", 1, 0, 0, false);
+
+      if (items.size() < 14) {
+        for (int i = items.size(); i < 14; i++) {
+          items.add(empty);
+        }
+      }
+
+      // move ammo into the correct place if the slot exists
+      ItemStack ammo = items.remove(EquipmentInventorySlot.AMMO.getSlotIdx());
+      items.add(3, ammo);
+
+      items.remove(12); // remove empty space between boots and ring
+
+      // pad it out to fit the 4 wide grid
+      items.add(0, empty);
+      items.add(2, empty);
+      items.add(3, empty);
+      items.add(7, empty);
+      items.add(11, empty);
+      items.add(15, empty);
+
+      items.forEach(
+          itemStack -> itemStack.setId(plugin.getItemManager().canonicalize(itemStack.getId())));
+    }
+
+    return updated;
+  }
+}

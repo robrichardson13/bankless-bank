@@ -1,0 +1,92 @@
+/*
+ * Ported from "Dude, Where's My Stuff?" by Thource (https://github.com/Thource/dude-wheres-my-stuff)
+ * Copyright (c) 2022, Thource. Licensed under the BSD 2-Clause License.
+ */
+package io.robrichardson.banklessbank.tracking.carryable;
+
+import io.robrichardson.banklessbank.BanklessBankPlugin;
+import io.robrichardson.banklessbank.tracking.ItemStack;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.ChatMessageType;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.gameval.ItemID;
+import net.runelite.api.widgets.Widget;
+import org.apache.commons.lang3.math.NumberUtils;
+
+/**
+ * GnomishFirelighter is responsible for tracking how many charges of which type of firelighter the
+ * player has stored in their gnomish firelighter.
+ */
+@Slf4j
+public class GnomishFirelighter extends CarryableStorage {
+
+  private static final Pattern chargesPattern = Pattern.compile(
+      "(\\d+) (\\w+) firelighter charges");
+
+  GnomishFirelighter(BanklessBankPlugin plugin) {
+    super(CarryableStorageType.GNOMISH_FIRELIGHTER, plugin);
+
+    hasStaticItems = true;
+
+    items.add(new ItemStack(ItemID.GNOMISH_FIRELIGHTER_RED, 0, plugin));
+    items.add(new ItemStack(ItemID.GNOMISH_FIRELIGHTER_GREEN, 0, plugin));
+    items.add(new ItemStack(ItemID.GNOMISH_FIRELIGHTER_BLUE, 0, plugin));
+    items.add(new ItemStack(ItemID.TRAIL_GNOMISH_FIRELIGHTER_PURPLE, 0, plugin));
+    items.add(new ItemStack(ItemID.TRAIL_GNOMISH_FIRELIGHTER_WHITE, 0, plugin));
+  }
+
+  @Override
+  public boolean onGameTick() {
+    Widget widget = plugin.getClient().getWidget(193, 2);
+    if (widget == null) {
+      return false;
+    }
+
+    String widgetText = widget.getText().replace("<br>", " ");
+    if (!widgetText.contains("gnomish firelighter")) {
+      return false;
+    }
+
+    if (widgetText.contains("is empty")) {
+      items.forEach(itemStack -> itemStack.setQuantity(0));
+      updateLastUpdated();
+      return true;
+    }
+
+    Matcher matcher = chargesPattern.matcher(widgetText);
+    int charges = 0;
+    Optional<ItemStack> itemStack = Optional.empty();
+    if (matcher.find()) {
+      charges = NumberUtils.toInt(matcher.group(1));
+      itemStack = items.stream().filter(i -> i.getName().contains(matcher.group(2))).findFirst();
+    }
+
+    if (!itemStack.isPresent()) {
+      return false;
+    }
+
+    itemStack.get().setQuantity(charges);
+    updateLastUpdated();
+
+    return true;
+  }
+
+  @Override
+  public boolean onChatMessage(ChatMessage chatMessage) {
+    if (chatMessage.getType() != ChatMessageType.SPAM
+        && chatMessage.getType() != ChatMessageType.GAMEMESSAGE) {
+      return false;
+    }
+
+    if (!chatMessage.getMessage().startsWith("You uncharge the gnomish firelighter")) {
+      return false;
+    }
+
+    items.forEach(itemStack -> itemStack.setQuantity(0));
+    updateLastUpdated();
+    return true;
+  }
+}
