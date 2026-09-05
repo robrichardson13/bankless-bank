@@ -226,6 +226,50 @@ public class BankViewModelTest
 		}
 	}
 
+	@Test
+	public void byStorageEmitsHeaderForEmptyStorageWhenShowEmptyStoragesEnabled()
+	{
+		layout.getMainTab().getSlots().add(99); // placeholder-only tab entry, irrelevant to BY_STORAGE
+		model.setSnapshots(Arrays.asList(
+			storage("carryable", "Inventory", item(1, "Whip", 1)),
+			storage("death", "Empty storage"),
+			storage("poh", "POH", item(2, "Logs", 5))));
+		model.setMode(ViewMode.BY_STORAGE);
+		model.setShowEmptyStorages(true);
+
+		model.rebuild();
+
+		List<BankRow> rows = model.getRows();
+		List<BankRow> headers = rows.stream().filter(r -> r.getKind() == BankRow.Kind.HEADER).collect(java.util.stream.Collectors.toList());
+		assertEquals(3, headers.size());
+		assertEquals("Inventory", headers.get(0).getHeaderText());
+		assertEquals("Empty storage", headers.get(1).getHeaderText());
+		assertEquals("POH", headers.get(2).getHeaderText());
+
+		int emptyHeaderIndex = rows.indexOf(headers.get(1));
+		assertTrue(emptyHeaderIndex + 1 == rows.size() || rows.get(emptyHeaderIndex + 1).getKind() == BankRow.Kind.HEADER);
+	}
+
+	@Test
+	public void byStorageHidesEmptyStorageHeaderWhenSearchDoesNotMatch()
+	{
+		layout.getMainTab().getSlots().add(99); // placeholder-only tab entry, irrelevant to BY_STORAGE
+		model.setSnapshots(Arrays.asList(
+			storage("carryable", "Inventory", item(1, "Whip", 1)),
+			storage("death", "Empty storage"),
+			storage("poh", "POH", item(2, "Logs", 5))));
+		model.setMode(ViewMode.BY_STORAGE);
+		model.setShowEmptyStorages(true);
+		model.setSearch("whip");
+
+		model.rebuild();
+
+		List<BankRow> rows = model.getRows();
+		long headerCount = rows.stream().filter(r -> r.getKind() == BankRow.Kind.HEADER).count();
+		assertEquals(1, headerCount);
+		assertEquals("Inventory", rows.get(0).getHeaderText());
+	}
+
 	// ---- scrolling ----
 
 	@Test
@@ -418,6 +462,70 @@ public class BankViewModelTest
 		assertEquals(-1, model.getDropCaretIndex());
 	}
 
+	@Test
+	public void dropOnEmptyGridSpaceAppendsToTheViewedTab()
+	{
+		layout.getMainTab().getSlots().addAll(Arrays.asList(1, 2, 3));
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1), item(3, "C", 1))));
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0); // item 1
+		model.beginDrag(dragFrom.x, dragFrom.y);
+
+		java.awt.Rectangle grid = model.gridRect();
+		DropTarget target = model.endDrag(grid.x + grid.width - 1, grid.y + grid.height - 1);
+
+		assertEquals(DropTarget.Type.TAB, target.getType());
+		assertFalse(model.isDragging());
+		assertEquals(Arrays.asList(2, 3, 1), layout.getMainTab().getSlots());
+	}
+
+	@Test
+	public void caretRectForAppendIndexIsDrawable()
+	{
+		layout.getMainTab().getSlots().addAll(Arrays.asList(1, 2, 3));
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1), item(3, "C", 1))));
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		model.beginDrag(dragFrom.x, dragFrom.y);
+
+		java.awt.Rectangle grid = model.gridRect();
+		model.updateDrag(grid.x + grid.width - 1, grid.y + grid.height - 1);
+
+		assertTrue(model.getDropCaretIndex() >= 0);
+		java.awt.Rectangle caret = model.slotRect(model.getDropCaretIndex());
+		assertTrue("caret rect must have non-zero width to be drawable", caret.width > 0);
+	}
+
+	@Test
+	public void pruningAnEarlierEmptyTabKeepsTheActiveTab()
+	{
+		layout.getMainTab().getSlots().clear();
+		int tab1 = layout.createTab(1);
+		int tab2 = layout.createTab(2);
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "AItem", 1), item(2, "BItem", 1))));
+		model.setActiveTab(tab2);
+		io.robrichardson.banklessbank.model.BankTab tab2Ref = layout.getTab(tab2);
+		model.setSearch("Item"); // matches both, so both tabs' items render regardless of activeTab
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0); // item 1, in tab1
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		assertEquals(1, model.getDragSlot().getCanonicalId());
+
+		// Drop onto the main tab strip entry: strip index 0 = All, 1 = Main.
+		java.awt.Rectangle mainTabRect = model.tabRect(1);
+		model.endDrag(mainTabRect.x + 1, mainTabRect.y + 1);
+
+		// tab1 is now empty and pruned, shifting tab2 down to index 1.
+		assertEquals(1, model.getActiveTab());
+		assertTrue(layout.getTab(model.getActiveTab()) == tab2Ref);
+	}
+
 	// ---- context menu ----
 
 	@Test
@@ -512,6 +620,70 @@ public class BankViewModelTest
 		model.activateMenu(cancelEntry.x, cancelEntry.y);
 
 		assertFalse(model.consumeCloseRequest());
+	}
+
+	@Test
+	public void deletingAnEarlierTabKeepsTheSameTabActive()
+	{
+		layout.getMainTab().getSlots().clear();
+		layout.createTab(1); // tab index 1
+		layout.createTab(2); // tab index 2
+		layout.createTab(3); // tab index 3
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1), item(3, "C", 1))));
+		model.setActiveTab(3);
+		model.rebuild();
+
+		// Strip: 0 = All, 1 = Main, 2 = tab1, 3 = tab2, 4 = tab3. Delete tab index 2 (strip index 3).
+		java.awt.Rectangle tabRect = model.tabRect(3);
+		model.openMenu(tabRect.x, tabRect.y);
+		ContextMenuEntry deleteEntry = null;
+		for (ContextMenuEntry e : model.getMenu().getEntries())
+		{
+			if (e.getAction() == MenuAction.DELETE_TAB)
+			{
+				deleteEntry = e;
+				break;
+			}
+		}
+		assertEquals(Integer.valueOf(2), Integer.valueOf(deleteEntry.getArg()));
+		java.awt.Rectangle deleteRect = model.getMenu().entryRect(model.getMenu().getEntries().indexOf(deleteEntry));
+
+		boolean changed = model.activateMenu(deleteRect.x, deleteRect.y);
+
+		assertTrue(changed);
+		assertEquals(2, model.getActiveTab());
+		model.rebuild();
+		assertTrue("the viewed tab's item still renders", model.getSlots().stream()
+			.anyMatch(s -> s.getCanonicalId() == 3));
+	}
+
+	@Test
+	public void deletingTheActiveTabFallsBackToAll()
+	{
+		layout.getMainTab().getSlots().clear();
+		layout.createTab(1); // tab index 1
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "A", 1))));
+		model.setActiveTab(1);
+		model.rebuild();
+
+		// Strip: 0 = All, 1 = Main, 2 = tab1.
+		java.awt.Rectangle tabRect = model.tabRect(2);
+		model.openMenu(tabRect.x, tabRect.y);
+		ContextMenuEntry deleteEntry = null;
+		for (ContextMenuEntry e : model.getMenu().getEntries())
+		{
+			if (e.getAction() == MenuAction.DELETE_TAB)
+			{
+				deleteEntry = e;
+				break;
+			}
+		}
+		java.awt.Rectangle deleteRect = model.getMenu().entryRect(model.getMenu().getEntries().indexOf(deleteEntry));
+
+		model.activateMenu(deleteRect.x, deleteRect.y);
+
+		assertEquals(-1, model.getActiveTab());
 	}
 
 	@Test

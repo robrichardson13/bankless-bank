@@ -497,6 +497,23 @@ public class DwmsImporterTest
 	}
 
 	@Test
+	public void importingFlagClearsWhenTheClientThreadWorkThrows()
+	{
+		when(configManager.getRSProfileConfigurationKeys(DwmsImporter.DWMS_CONFIG_GROUP, PROFILE, ""))
+			.thenReturn(Collections.emptyList());
+		org.mockito.Mockito.doThrow(new RuntimeException("boom")).when(plugin).reload();
+
+		@SuppressWarnings("unchecked")
+		java.util.function.Consumer<Result> callback = mock(java.util.function.Consumer.class);
+		importer.importNow(Mode.OVERWRITE, callback);
+
+		ArgumentCaptor<Result> resultCaptor = ArgumentCaptor.forClass(Result.class);
+		verify(callback).accept(resultCaptor.capture());
+		assertFalse(resultCaptor.getValue().isLiveResponseReceived());
+		assertFalse(importer.isImporting());
+	}
+
+	@Test
 	public void importNowFinishesWithoutLivePhaseWhenDwmsNotEnabled()
 	{
 		when(configManager.getRSProfileConfigurationKeys(DwmsImporter.DWMS_CONFIG_GROUP, PROFILE, ""))

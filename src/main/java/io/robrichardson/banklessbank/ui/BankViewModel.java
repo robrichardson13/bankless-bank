@@ -31,12 +31,15 @@ public class BankViewModel
 	private List<StorageSnapshot> snapshots = Collections.emptyList();
 	private Map<Integer, String> knownNames = new HashMap<>();
 	private boolean placeholdersEnabled = true;
+	private boolean showEmptyStorages;
 	private int visibleRows = BankGeometry.DEFAULT_ROWS;
 
 	// ---- view state ----
 	private ViewMode mode = ViewMode.TABS;
 	private int activeTab = -1;
 	private String search = "";
+	/** {@link #search} lower-cased once, so the filter does not re-fold it per item. */
+	private String searchLower = "";
 	private boolean searchFocused;
 
 	// ---- owned-item data, recomputed whenever snapshots change (independent of dirty rows) ----
@@ -66,10 +69,6 @@ public class BankViewModel
 
 	/** Raised by the title-bar menu's "Close" entry; the controller consumes it. */
 	private boolean closeRequested;
-
-	public BankViewModel()
-	{
-	}
 
 	// =========================================================================================
 	// Inputs
@@ -107,6 +106,22 @@ public class BankViewModel
 	public boolean isPlaceholdersEnabled()
 	{
 		return placeholdersEnabled;
+	}
+
+	public void setShowEmptyStorages(boolean enabled)
+	{
+		if (this.showEmptyStorages == enabled)
+		{
+			return;
+		}
+
+		this.showEmptyStorages = enabled;
+		invalidate();
+	}
+
+	public boolean isShowEmptyStorages()
+	{
+		return showEmptyStorages;
 	}
 
 	public void setVisibleRows(int rows)
@@ -155,6 +170,39 @@ public class BankViewModel
 		invalidate();
 	}
 
+	/** The {@link BankTab} instance currently active, or null when no tab is active. */
+	private BankTab activeTabRef()
+	{
+		return activeTab >= 0 ? layout.getTab(activeTab) : null;
+	}
+
+	/**
+	 * Re-resolves {@link #activeTab} to wherever {@code ref} now lives after a layout mutation
+	 * (tabs can be deleted or pruned, shifting indices). Matches by identity, not equality, since
+	 * {@link BankTab} is a data class and distinct tabs can otherwise compare equal.
+	 */
+	private void syncActiveTab(BankTab ref)
+	{
+		if (ref == null)
+		{
+			if (activeTab >= layout.getTabs().size())
+			{
+				activeTab = -1;
+			}
+			return;
+		}
+
+		for (int i = 0; i < layout.getTabs().size(); i++)
+		{
+			if (layout.getTab(i) == ref)
+			{
+				activeTab = i;
+				return;
+			}
+		}
+		activeTab = -1;
+	}
+
 	public String getSearch()
 	{
 		return search;
@@ -163,6 +211,7 @@ public class BankViewModel
 	public void setSearch(String text)
 	{
 		this.search = text == null ? "" : text;
+		this.searchLower = this.search.toLowerCase(Locale.ROOT);
 		this.scroll = 0;
 		invalidate();
 	}
@@ -220,7 +269,8 @@ public class BankViewModel
 		{
 			for (StorageSnapshot snap : snapshots)
 			{
-				if (snap.getItems().isEmpty())
+				final boolean emptyStorage = snap.getItems().isEmpty();
+				if (emptyStorage && !showEmptyStorages)
 				{
 					continue;
 				}
@@ -237,7 +287,10 @@ public class BankViewModel
 						item.isStackable(), false, src, -1, -1));
 				}
 
-				if (built.isEmpty())
+				// An empty storage still gets a header when the player asked to see empty storages and
+				// is not filtering; anything else with no matching items is skipped entirely.
+				final boolean keepAsEmptyStorage = emptyStorage && showEmptyStorages && search.isEmpty();
+				if (built.isEmpty() && !keepAsEmptyStorage)
 				{
 					continue;
 				}
@@ -308,7 +361,7 @@ public class BankViewModel
 
 	private boolean matchesSearch(String name)
 	{
-		return search.isEmpty() || (name != null && name.toLowerCase(Locale.ROOT).contains(search.toLowerCase(Locale.ROOT)));
+		return searchLower.isEmpty() || (name != null && name.toLowerCase(Locale.ROOT).contains(searchLower));
 	}
 
 	private static int appendItemRows(List<BankRow> rowsOut, List<BankSlot> slotsOut, List<BankSlot> built, int y)
@@ -393,7 +446,8 @@ public class BankViewModel
 
 	public int getStripLength()
 	{
-		return 1 + getTabCount() + (getTabCount() < BankLayout.MAX_TABS ? 1 : 0);
+		final int tabCount = getTabCount();
+		return 1 + tabCount + (tabCount < BankLayout.MAX_TABS ? 1 : 0);
 	}
 
 	/** layout.sync(getOwnedIds(), placeholdersEnabled). Returns true when the layout changed. */
@@ -519,6 +573,21 @@ public class BankViewModel
 			}
 			idx += size;
 		}
+
+		if (slotIndex == idx && !rows.isEmpty())
+		{
+			for (int i = rows.size() - 1; i >= 0; i--)
+			{
+				BankRow row = rows.get(i);
+				if (row.getKind() == BankRow.Kind.ITEMS)
+				{
+					int rowLocalY = gridRect().y + row.getY() - scroll;
+					int col = Math.min(row.getSlots().size(), BankGeometry.COLS - 1);
+					return BankGeometry.slotInRow(rowLocalY, col);
+				}
+			}
+		}
+
 		return new Rectangle(-1, -1, 0, 0);
 	}
 
@@ -689,6 +758,7 @@ public class BankViewModel
 
 		if (mode == ViewMode.TABS)
 		{
+			final BankTab activeRef = activeTabRef();
 			Hit hit = hitTest(x, y);
 			int itemId = dragSlot.getCanonicalId();
 
@@ -699,6 +769,7 @@ public class BankViewModel
 				if (targetTab != -1)
 				{
 					layout.moveItem(itemId, targetTab, targetIndex);
+					syncActiveTab(activeRef);
 					result = new DropTarget(DropTarget.Type.SLOT, targetTab, targetIndex);
 				}
 			}
@@ -708,6 +779,7 @@ public class BankViewModel
 				if (tabIndex >= 0 && tabIndex < getTabCount())
 				{
 					layout.moveItemToTab(itemId, tabIndex);
+					syncActiveTab(activeRef);
 					BankTab tab = layout.getTab(tabIndex);
 					int slotIndex = tab == null ? 0 : Math.max(0, tab.getSlots().size() - 1);
 					result = new DropTarget(DropTarget.Type.TAB, tabIndex, slotIndex);
@@ -718,9 +790,18 @@ public class BankViewModel
 				int newIndex = layout.createTab(itemId);
 				if (newIndex != -1)
 				{
+					syncActiveTab(activeRef);
 					setActiveTab(newIndex);
 					result = new DropTarget(DropTarget.Type.NEW_TAB, newIndex, 0);
 				}
+			}
+			else if (hit.getType() == Hit.Type.GRID_EMPTY)
+			{
+				final int targetTab = activeTab == -1 ? 0 : activeTab;
+				layout.moveItemToTab(itemId, targetTab);
+				syncActiveTab(activeRef);
+				final BankTab tab = layout.getTab(targetTab);
+				result = new DropTarget(DropTarget.Type.TAB, targetTab, tab == null ? 0 : Math.max(0, tab.getSlots().size() - 1));
 			}
 		}
 
@@ -886,23 +967,28 @@ public class BankViewModel
 		}
 
 		ContextMenuEntry entry = menu.getEntries().get(idx);
+		final BankTab activeRef = activeTabRef();
 		boolean changed = false;
 
 		switch (entry.getAction())
 		{
 			case RELEASE_PLACEHOLDER:
 				changed = layout.releasePlaceholder(entry.getArg(), ownedIds);
+				syncActiveTab(activeRef);
 				break;
 			case RELEASE_ALL_IN_TAB:
 				changed = layout.releaseAllPlaceholders(entry.getArg(), ownedIds) > 0;
+				syncActiveTab(activeRef);
 				break;
 			case RELEASE_ALL:
 				changed = layout.releaseAllPlaceholders(-1, ownedIds) > 0;
+				syncActiveTab(activeRef);
 				break;
 			case NEW_TAB_FROM_ITEM:
 			{
 				int newIndex = layout.createTab(entry.getArg());
 				changed = newIndex != -1;
+				syncActiveTab(activeRef);
 				if (changed)
 				{
 					setActiveTab(newIndex);
@@ -913,11 +999,13 @@ public class BankViewModel
 				if (activeTab >= 0)
 				{
 					layout.moveItem(entry.getArg(), activeTab, 0);
+					syncActiveTab(activeRef);
 					changed = true;
 				}
 				break;
 			case MOVE_TO_MAIN:
 				layout.moveItemToTab(entry.getArg(), 0);
+				syncActiveTab(activeRef);
 				changed = true;
 				break;
 			case DELETE_TAB:
@@ -925,10 +1013,7 @@ public class BankViewModel
 				int tabIndex = entry.getArg();
 				layout.deleteTab(tabIndex);
 				changed = true;
-				if (activeTab == tabIndex)
-				{
-					activeTab = -1;
-				}
+				syncActiveTab(activeRef);
 				break;
 			}
 			case CLOSE_VIEW:

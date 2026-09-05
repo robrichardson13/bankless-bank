@@ -54,6 +54,7 @@ public class BankOverlay extends Overlay
 	private static final Color MENU_HILIGHT = new Color(0x8A, 0x8A, 0x8A);
 	private static final Color CARET = new Color(0xFF, 0xFF, 0x00);
 	private static final Color DROP_TAB = new Color(0xFF, 0xFF, 0x00, 90);
+	private static final Color CLOSE_BG = new Color(0x8B, 0x2A, 0x2A);
 
 	private static final Rectangle EMPTY = new Rectangle();
 
@@ -90,6 +91,14 @@ public class BankOverlay extends Overlay
 	public Dimension render(Graphics2D graphics)
 	{
 		controller.drainActions();
+
+		// Config-to-model sync must happen before refresh(), which may run syncLayout() (and persist
+		// the result) even while the view is closed. Both setters no-op when the value is unchanged,
+		// so this is cheap to do every frame regardless of open state.
+		final BankViewModel model = controller.getViewModel();
+		model.setPlaceholdersEnabled(config.placeholders());
+		model.setShowEmptyStorages(config.showEmptyStorages());
+
 		controller.refresh();
 
 		if (!controller.isOpen())
@@ -98,8 +107,6 @@ public class BankOverlay extends Overlay
 			return null;
 		}
 
-		final BankViewModel model = controller.getViewModel();
-		model.setPlaceholdersEnabled(config.placeholders());
 		model.rebuild();
 
 		// OverlayRenderer translated the graphics to getBounds()'s location before calling us, using
@@ -115,7 +122,7 @@ public class BankOverlay extends Overlay
 		final Point mouse = listener.getLastMouse();
 		final Point local = mouse == null ? null : new Point(mouse.x - origin.x, mouse.y - origin.y);
 
-		drawChrome(graphics, model, size);
+		drawChrome(graphics, size);
 		drawTitle(graphics, model, size);
 		drawTabs(graphics, model, local);
 		drawGrid(graphics, model, local);
@@ -133,7 +140,7 @@ public class BankOverlay extends Overlay
 
 	// ---- chrome ----------------------------------------------------------------------------
 
-	private void drawChrome(Graphics2D graphics, BankViewModel model, Dimension size)
+	private void drawChrome(Graphics2D graphics, Dimension size)
 	{
 		graphics.setColor(CHROME);
 		graphics.fillRect(0, 0, size.width, size.height);
@@ -150,7 +157,7 @@ public class BankOverlay extends Overlay
 		graphics.setFont(FontManager.getRunescapeBoldFont());
 		graphics.setColor(TEXT);
 		final FontMetrics fm = graphics.getFontMetrics();
-		final int baseline = title.y + (title.height + fm.getAscent() - fm.getDescent()) / 2;
+		final int baseline = baseline(fm, title.y, title.height);
 		graphics.drawString("Bankless Bank", title.x + 4, baseline);
 
 		final String count = model.getItemCount() + " items";
@@ -159,7 +166,7 @@ public class BankOverlay extends Overlay
 		graphics.drawString(count, title.x + (title.width - countWidth) / 2, baseline);
 
 		final Rectangle close = model.closeButtonRect();
-		graphics.setColor(new Color(0x8B, 0x2A, 0x2A));
+		graphics.setColor(CLOSE_BG);
 		graphics.fillRect(close.x, close.y, close.width, close.height);
 		graphics.setColor(Color.WHITE);
 		graphics.drawLine(close.x + 4, close.y + 4, close.x + close.width - 5, close.y + close.height - 5);
@@ -196,9 +203,12 @@ public class BankOverlay extends Overlay
 				final int iconId = model.getTabIconItemId(i - 1);
 				if (iconId > 0)
 				{
+					final Shape oldClip = graphics.getClip();
+					graphics.clipRect(r.x + 1, r.y + 1, r.width - 2, r.height - 2);
 					drawSprite(graphics, iconId, 1, false,
 						r.x + (r.width - BankGeometry.ITEM_SPRITE_W) / 2,
 						r.y + (r.height - BankGeometry.ITEM_SPRITE_H) / 2, 1f);
+					graphics.setClip(oldClip);
 				}
 				else
 				{
@@ -285,16 +295,17 @@ public class BankOverlay extends Overlay
 	private void drawHeader(Graphics2D graphics, BankRow row, int x, int y)
 	{
 		final FontMetrics fm = graphics.getFontMetrics();
-		final int baseline = y + (row.getHeight() + fm.getAscent() - fm.getDescent()) / 2 - 1;
+		final int baseline = baseline(fm, y, row.getHeight()) - 1;
 
+		final String name = row.getHeaderText() == null ? "" : row.getHeaderText();
 		graphics.setColor(TEXT);
-		graphics.drawString(row.getHeaderText() == null ? "" : row.getHeaderText(), x + 3, baseline);
+		graphics.drawString(name, x + 3, baseline);
 
-		if (row.getHeaderSubtitle() != null && !row.getHeaderSubtitle().isEmpty())
+		final String subtitle = row.getHeaderSubtitle();
+		if (subtitle != null && !subtitle.isEmpty())
 		{
-			final int nameWidth = fm.stringWidth(row.getHeaderText() == null ? "" : row.getHeaderText());
 			graphics.setColor(TEXT_DIM);
-			graphics.drawString(row.getHeaderSubtitle(), x + 9 + nameWidth, baseline);
+			graphics.drawString(subtitle, x + 9 + fm.stringWidth(name), baseline);
 		}
 	}
 
@@ -388,10 +399,10 @@ public class BankOverlay extends Overlay
 
 		graphics.setFont(FontManager.getRunescapeSmallFont());
 		final FontMetrics fm = graphics.getFontMetrics();
-		final int baseline = r.y + (r.height + fm.getAscent() - fm.getDescent()) / 2;
+		final int baseline = baseline(fm, r.y, r.height);
 
 		final String search = model.getSearch();
-		if (search == null || search.isEmpty())
+		if (search.isEmpty())
 		{
 			graphics.setColor(TEXT_DIM);
 			graphics.drawString("Search...", r.x + 4, baseline);
@@ -483,8 +494,7 @@ public class BankOverlay extends Overlay
 			}
 
 			graphics.setColor(Color.WHITE);
-			graphics.drawString(entries.get(i).getLabel(), er.x + 4,
-				er.y + (er.height + fm.getAscent() - fm.getDescent()) / 2);
+			graphics.drawString(entries.get(i).getLabel(), er.x + 4, baseline(fm, er.y, er.height));
 		}
 
 		graphics.setFont(old);
@@ -500,7 +510,7 @@ public class BankOverlay extends Overlay
 		}
 
 		final List<String> lines = model.tooltipLines(local.x, local.y);
-		if (lines == null || lines.isEmpty())
+		if (lines.isEmpty())
 		{
 			return;
 		}
@@ -512,8 +522,12 @@ public class BankOverlay extends Overlay
 	{
 		final FontMetrics fm = graphics.getFontMetrics();
 		graphics.setColor(color);
-		graphics.drawString(text,
-			r.x + (r.width - fm.stringWidth(text)) / 2,
-			r.y + (r.height + fm.getAscent() - fm.getDescent()) / 2);
+		graphics.drawString(text, r.x + (r.width - fm.stringWidth(text)) / 2, baseline(fm, r.y, r.height));
+	}
+
+	/** Baseline y that vertically centres a line of this font in a band of {@code height} at {@code y}. */
+	private static int baseline(FontMetrics fm, int y, int height)
+	{
+		return y + (height + fm.getAscent() - fm.getDescent()) / 2;
 	}
 }

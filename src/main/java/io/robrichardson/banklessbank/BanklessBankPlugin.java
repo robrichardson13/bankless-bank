@@ -66,6 +66,10 @@ import net.runelite.client.util.ImageUtil;
 )
 public class BanklessBankPlugin extends Plugin
 {
+	private static final String CONFIG_KEY_SHOW_HUD_BUTTON = "showHudButton";
+	private static final String CONFIG_KEY_PLACEHOLDERS = "placeholders";
+	private static final String CONFIG_KEY_SHOW_EMPTY_STORAGES = "showEmptyStorages";
+
 	static final String CONFIG_KEY_IS_MEMBER = "isMember";
 	static final String CONFIG_KEY_ACCOUNT_TYPE = "accountType";
 
@@ -156,6 +160,13 @@ public class BanklessBankPlugin extends Plugin
 	private boolean pluginStartedAlreadyLoggedIn;
 	private String profileKey;
 
+	/**
+	 * The profile whose tracked storages are actually loaded; null until the deferred load has
+	 * run.
+	 */
+	@Getter
+	private volatile String loadedProfileKey;
+
 	/** Set when any tracked storage changes; the view clears it when it redraws. */
 	@Getter
 	private volatile boolean storagesDirty;
@@ -183,14 +194,17 @@ public class BanklessBankPlugin extends Plugin
 
 		reset();
 
-		if (client.getGameState() == GameState.LOGGED_IN)
+		final GameState gameState = client.getGameState();
+		if (gameState == GameState.LOGGED_IN || gameState == GameState.LOGGING_IN)
 		{
 			clientState = ClientState.LOGGING_IN;
-			pluginStartedAlreadyLoggedIn = true;
 		}
-		else if (client.getGameState() == GameState.LOGGING_IN)
+
+		if (gameState == GameState.LOGGED_IN)
 		{
-			clientState = ClientState.LOGGING_IN;
+			// Already in-game, so the login sequence we hook the initial load onto has been and gone;
+			// onGameTick replays the item containers instead.
+			pluginStartedAlreadyLoggedIn = true;
 		}
 
 		panel = injector.getInstance(BanklessBankPanel.class);
@@ -229,9 +243,20 @@ public class BanklessBankPlugin extends Plugin
 		overlayManager.remove(hudButtonOverlay);
 		inputListener.publish(false, null, false);
 		inputListener.publishHud(false, null);
-		viewController.shutDown();
+		viewController.stop();
 
-		save();
+		// startUp/shutDown run on the EDT, but BankOverlay.render() -> refresh() mutates the same
+		// BankViewModel/BankLayout state on the client thread; overlayManager.remove above does not
+		// cancel a frame already in flight. Route the flush through the client thread so it
+		// serialises against that in-flight render instead of racing it. If the client thread never
+		// runs again (client exiting), at worst the last second of layout edits is lost; tracked
+		// storages themselves are still flushed separately by the existing onClientShutdown/
+		// onConfigSync handlers.
+		clientThread.invoke(() ->
+		{
+			viewController.flush();
+			save();
+		});
 
 		if (navButton != null)
 		{
@@ -269,7 +294,7 @@ public class BanklessBankPlugin extends Plugin
 			return;
 		}
 
-		if ("showHudButton".equals(configChanged.getKey()))
+		if (CONFIG_KEY_SHOW_HUD_BUTTON.equals(configChanged.getKey()))
 		{
 			if (config.showHudButton())
 			{
@@ -281,8 +306,8 @@ public class BanklessBankPlugin extends Plugin
 				inputListener.publishHud(false, null);
 			}
 		}
-		else if ("placeholders".equals(configChanged.getKey())
-			|| "showEmptyStorages".equals(configChanged.getKey()))
+		else if (CONFIG_KEY_PLACEHOLDERS.equals(configChanged.getKey())
+			|| CONFIG_KEY_SHOW_EMPTY_STORAGES.equals(configChanged.getKey()))
 		{
 			viewController.post(() -> viewController.getViewModel().invalidate());
 			storagesChanged();
@@ -296,6 +321,13 @@ public class BanklessBankPlugin extends Plugin
 		ItemContainerWatcher.reset();
 		storageManagerManager.reset();
 		storagesChanged();
+		loadedProfileKey = null;
+	}
+
+	/** No tracked storage is loaded, so events carry nothing we can attribute to a profile. */
+	private boolean isLoggedOut()
+	{
+		return clientState == ClientState.LOGGED_OUT;
 	}
 
 	/** Called by the tracking layer whenever tracked items change. */
@@ -313,13 +345,16 @@ public class BanklessBankPlugin extends Plugin
 	private void load(String profileKey)
 	{
 		this.profileKey = profileKey;
+		loadedProfileKey = null;
 
 		clientThread.invokeLater(() ->
 		{
 			storageManagerManager.reset();
 			storageManagerManager.load(profileKey);
 			storagesChanged();
+			loadedProfileKey = profileKey;
 			maybeAutoImportFromDwms(profileKey);
+			refreshPanel();
 		});
 	}
 
@@ -384,6 +419,7 @@ public class BanklessBankPlugin extends Plugin
 		storageManagerManager.reset();
 		storageManagerManager.load(profileKey);
 		storagesChanged();
+		loadedProfileKey = profileKey;
 	}
 
 	@Subscribe
@@ -410,16 +446,24 @@ public class BanklessBankPlugin extends Plugin
 	{
 		storageManagerManager.onGameStateChanged(gameStateChanged);
 
-		if (gameStateChanged.getGameState() == GameState.LOGGING_IN)
+		final GameState gameState = gameStateChanged.getGameState();
+		if (gameState == GameState.LOGGING_IN)
 		{
 			clientState = ClientState.LOGGING_IN;
+		}
+
+		if (gameState == GameState.LOGGED_IN
+			|| gameState == GameState.LOGIN_SCREEN
+			|| gameState == GameState.HOPPING)
+		{
+			refreshPanel();
 		}
 	}
 
 	@Subscribe
 	public void onGameTick(GameTick gameTick)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -478,7 +522,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onChatMessage(ChatMessage chatMessage)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -489,7 +533,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onGameObjectSpawned(GameObjectSpawned gameObjectSpawned)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -500,7 +544,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onMenuOptionClicked(MenuOptionClicked menuOption)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -511,7 +555,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onWidgetLoaded(WidgetLoaded widgetLoaded)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -522,7 +566,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onWidgetClosed(WidgetClosed widgetClosed)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -533,7 +577,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onVarbitChanged(VarbitChanged varbitChanged)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -544,7 +588,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onItemContainerChanged(ItemContainerChanged itemContainerChanged)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}
@@ -555,7 +599,7 @@ public class BanklessBankPlugin extends Plugin
 	@Subscribe
 	public void onItemDespawned(ItemDespawned itemDespawned)
 	{
-		if (clientState == ClientState.LOGGED_OUT)
+		if (isLoggedOut())
 		{
 			return;
 		}

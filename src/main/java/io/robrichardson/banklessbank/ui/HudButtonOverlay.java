@@ -25,6 +25,7 @@ public class HudButtonOverlay extends Overlay
 	private static final Color PANEL = new Color(0x3E, 0x35, 0x29, 0xD0);
 	private static final Color BORDER = new Color(0x5F, 0x54, 0x3F);
 	private static final Color GLYPH = new Color(0xFF, 0x98, 0x1F);
+	private static final Color OPEN_TINT = new Color(0xFF, 0xFF, 0xFF, 40);
 	private static final Dimension DIMENSION = new Dimension(SIZE, SIZE);
 
 	private final BankViewController controller;
@@ -66,7 +67,7 @@ public class HudButtonOverlay extends Overlay
 
 		if (controller.isOpen())
 		{
-			graphics.setColor(new Color(0xFF, 0xFF, 0xFF, 40));
+			graphics.setColor(OPEN_TINT);
 			graphics.fillRoundRect(0, 0, SIZE, SIZE, 6, 6);
 		}
 

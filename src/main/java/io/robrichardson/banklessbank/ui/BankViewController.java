@@ -21,7 +21,6 @@ import javax.inject.Singleton;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
-import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 
@@ -45,7 +44,6 @@ public class BankViewController
 
 	private final BanklessBankPlugin plugin;
 	private final Client client;
-	private final ClientThread clientThread;
 	private final ItemManager itemManager;
 	private final ConfigManager configManager;
 	private final BanklessBankConfig config;
@@ -70,16 +68,14 @@ public class BankViewController
 	private String loadedProfileKey;
 	private boolean layoutDirty;
 	private long lastSaveMs;
-	private boolean started;
+	private volatile boolean started;
 
 	@Inject
-	BankViewController(BanklessBankPlugin plugin, Client client, ClientThread clientThread,
-		ItemManager itemManager, ConfigManager configManager, BanklessBankConfig config,
-		LayoutStore layoutStore)
+	BankViewController(BanklessBankPlugin plugin, Client client, ItemManager itemManager,
+		ConfigManager configManager, BanklessBankConfig config, LayoutStore layoutStore)
 	{
 		this.plugin = plugin;
 		this.client = client;
-		this.clientThread = clientThread;
 		this.itemManager = itemManager;
 		this.configManager = configManager;
 		this.config = config;
@@ -110,13 +106,17 @@ public class BankViewController
 		actions.clear();
 	}
 
-	/** Flushes the layout and the window position. */
-	public void shutDown()
+	/** Stops the controller from doing further work. Safe from any thread. */
+	public void stop()
 	{
 		started = false;
 		open = false;
 		actions.clear();
+	}
 
+	/** Flushes the layout and the window position. Client thread only: touches shared view state. */
+	public void flush()
+	{
 		if (loadedProfileKey != null)
 		{
 			layoutStore.save(loadedProfileKey, viewModel.getLayout());
@@ -258,7 +258,7 @@ public class BankViewController
 	 */
 	public void refresh()
 	{
-		if (!started)
+		if (!started || plugin.getLoadedProfileKey() == null)
 		{
 			return;
 		}
@@ -274,6 +274,7 @@ public class BankViewController
 
 		if (rebuilt && viewModel.syncLayout())
 		{
+			viewModel.closeMenu();
 			layoutDirty = true;
 		}
 
@@ -297,7 +298,12 @@ public class BankViewController
 
 	private boolean syncProfile()
 	{
-		String profileKey = configManager.getRSProfileKey();
+		String profileKey = plugin.getLoadedProfileKey();
+		if (profileKey == null)
+		{
+			return false;
+		}
+
 		if (Objects.equals(profileKey, loadedProfileKey))
 		{
 			return false;
@@ -317,6 +323,7 @@ public class BankViewController
 		viewModel.setActiveTab(-1);
 		viewModel.setScroll(0);
 		categories.clear();
+		knownNames.clear();
 		return true;
 	}
 
@@ -384,13 +391,7 @@ public class BankViewController
 	/** Fills in names for layout ids we have never seen a storage for (released-then-returned). */
 	private void seedPlaceholderNames()
 	{
-		BankLayout layout = viewModel.getLayout();
-		if (layout == null)
-		{
-			return;
-		}
-
-		layout.getTabs().forEach(tab -> tab.getSlots().forEach(id ->
+		viewModel.getLayout().getTabs().forEach(tab -> tab.getSlots().forEach(id ->
 		{
 			if (id != null && !knownNames.containsKey(id))
 			{
@@ -418,11 +419,5 @@ public class BankViewController
 		Integer value = configManager.getConfiguration(
 			BanklessBankConfig.CONFIG_GROUP, key, int.class);
 		return value == null ? fallback : value;
-	}
-
-	/** Convenience for callers that are not already on the client thread. */
-	public void invokeOnClientThread(Runnable runnable)
-	{
-		clientThread.invoke(runnable);
 	}
 }

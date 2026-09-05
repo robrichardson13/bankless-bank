@@ -181,31 +181,40 @@ public class DwmsImporter
 
 		clientThread.invokeLater(() ->
 		{
-			String profileKey = configManager.getRSProfileKey();
-			if (profileKey == null)
+			try
 			{
-				finish(new Result(0, 0, false, "Log in first"), callback);
-				return;
+				String profileKey = configManager.getRSProfileKey();
+				if (profileKey == null)
+				{
+					finish(new Result(0, 0, false, "Log in first"), callback);
+					return;
+				}
+
+				StorageManagerManager smm = plugin.getStorageManagerManager();
+				Set<String> storagesWithDataBefore = storagesWithData(smm, profileKey);
+
+				plugin.save();
+				int copied = copyConfig(profileKey, mode, storagesWithDataBefore);
+				plugin.reload();
+
+				if (!isDwmsEnabled())
+				{
+					finish(new Result(copied, 0, false,
+						copied + " storages copied from saved DWMS data (DWMS not running)"), callback);
+					return;
+				}
+
+				pending = new Pending(mode, callback, copied, storagesWithDataBefore, client.getTickCount() + RESPONSE_TIMEOUT_TICKS);
+				Map<String, Object> data = new HashMap<>();
+				data.put("source", PLUGIN_MESSAGE_SOURCE);
+				eventBus.post(new PluginMessage(DWMS_CONFIG_GROUP, DWMS_STORAGES_REQUEST, data));
 			}
-
-			StorageManagerManager smm = plugin.getStorageManagerManager();
-			Set<String> storagesWithDataBefore = storagesWithData(smm, profileKey);
-
-			plugin.save();
-			int copied = copyConfig(profileKey, mode, storagesWithDataBefore);
-			plugin.reload();
-
-			if (!isDwmsEnabled())
+			catch (RuntimeException e)
 			{
-				finish(new Result(copied, 0, false,
-					copied + " storages copied from saved DWMS data (DWMS not running)"), callback);
-				return;
+				log.warn("DWMS import failed", e);
+				pending = null;
+				finish(new Result(0, 0, false, "Import failed: " + e.getMessage()), callback);
 			}
-
-			pending = new Pending(mode, callback, copied, storagesWithDataBefore, client.getTickCount() + RESPONSE_TIMEOUT_TICKS);
-			Map<String, Object> data = new HashMap<>();
-			data.put("source", PLUGIN_MESSAGE_SOURCE);
-			eventBus.post(new PluginMessage(DWMS_CONFIG_GROUP, DWMS_STORAGES_REQUEST, data));
 		});
 	}
 
@@ -309,11 +318,19 @@ public class DwmsImporter
 		}
 		pending = null;
 
-		int applied = applyLiveStorages(message.getData(), p.mode, p.storagesWithDataBefore);
-		plugin.save();
-		plugin.storagesChanged();
-		finish(new Result(p.configKeysCopied, applied, true,
-			p.configKeysCopied + " storages copied, " + applied + " refreshed from DWMS live data"), p.callback);
+		try
+		{
+			int applied = applyLiveStorages(message.getData(), p.mode, p.storagesWithDataBefore);
+			plugin.save();
+			plugin.storagesChanged();
+			finish(new Result(p.configKeysCopied, applied, true,
+				p.configKeysCopied + " storages copied, " + applied + " refreshed from DWMS live data"), p.callback);
+		}
+		catch (RuntimeException e)
+		{
+			log.warn("DWMS import failed", e);
+			finish(new Result(p.configKeysCopied, 0, false, "Import failed: " + e.getMessage()), p.callback);
+		}
 	}
 
 	@SuppressWarnings("unchecked")
@@ -355,36 +372,45 @@ public class DwmsImporter
 				continue;
 			}
 
-			List<ItemStack> stacks = new ArrayList<>();
-			Object itemsObj = entry.get("items");
-			if (itemsObj instanceof List)
-			{
-				for (Object itemObj : (List<Object>) itemsObj)
-				{
-					if (!(itemObj instanceof Map))
-					{
-						continue;
-					}
-					Map<String, Object> item = (Map<String, Object>) itemObj;
-					int id = toLong(item.get("id"), -1) > 0 ? (int) toLong(item.get("id"), -1) : -1;
-					long quantity = toLong(item.get("quantity"), 0);
-					if (id > 0 && quantity > 0)
-					{
-						stacks.add(new ItemStack(id, quantity, plugin));
-					}
-				}
-			}
-
-			((ItemStorage<?>) storage).importItems(stacks, toLong(entry.get("lastUpdated"), -1));
+			((ItemStorage<?>) storage).importItems(parseStacks(entry.get("items")),
+				toLong(entry.get("lastUpdated"), -1));
 			applied++;
 		}
 
 		return applied;
 	}
 
-	private static long toLong(Object o, long dfault)
+	/** Reads the {@code items} list of one storage entry from a DWMS live response. */
+	@SuppressWarnings("unchecked")
+	private List<ItemStack> parseStacks(Object itemsObj)
 	{
-		return o instanceof Number ? ((Number) o).longValue() : dfault;
+		List<ItemStack> stacks = new ArrayList<>();
+		if (!(itemsObj instanceof List))
+		{
+			return stacks;
+		}
+
+		for (Object itemObj : (List<Object>) itemsObj)
+		{
+			if (!(itemObj instanceof Map))
+			{
+				continue;
+			}
+
+			Map<String, Object> item = (Map<String, Object>) itemObj;
+			long id = toLong(item.get("id"), -1);
+			long quantity = toLong(item.get("quantity"), 0);
+			if (id > 0 && quantity > 0)
+			{
+				stacks.add(new ItemStack((int) id, quantity, plugin));
+			}
+		}
+		return stacks;
+	}
+
+	private static long toLong(Object value, long fallback)
+	{
+		return value instanceof Number ? ((Number) value).longValue() : fallback;
 	}
 
 	private void finish(Result result, @Nullable Consumer<Result> callback)

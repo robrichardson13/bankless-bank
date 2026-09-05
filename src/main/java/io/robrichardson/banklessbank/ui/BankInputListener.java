@@ -59,6 +59,9 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 	/** True while a consumed press is outstanding, so its release is consumed too. */
 	private boolean pressConsumed;
 
+	/** True when the press+release that preceded the next click were both consumed. */
+	private boolean clickConsumed;
+
 	@Getter
 	private final HotkeyListener hotkeyListener;
 
@@ -118,19 +121,35 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 		return e;
 	}
 
+	private void trackMouse(MouseEvent e)
+	{
+		lastMouse = new Point(e.getX(), e.getY());
+	}
+
+	/** Drops every in-flight drag; the caller decides what happens to the consumed-press flags. */
+	private void clearDragState()
+	{
+		titleDrag = false;
+		thumbDrag = false;
+		slotDragArmed = false;
+		slotDragActive = false;
+		pressPoint = null;
+		titleDragOffset = null;
+	}
+
 	// ---- mouse -----------------------------------------------------------------------------
 
 	@Override
 	public MouseEvent mouseMoved(MouseEvent e)
 	{
-		lastMouse = new Point(e.getX(), e.getY());
+		trackMouse(e);
 		return inside(e) ? consume(e) : e;
 	}
 
 	@Override
 	public MouseEvent mousePressed(MouseEvent e)
 	{
-		lastMouse = new Point(e.getX(), e.getY());
+		trackMouse(e);
 		pressConsumed = false;
 
 		if (SwingUtilities.isRightMouseButton(e))
@@ -167,7 +186,7 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 				return consume(e);
 			}
 
-			if (open)
+			if (open && !altHeld)
 			{
 				controller.post(() -> controller.getViewModel().closeMenu());
 				pressConsumed = true;
@@ -181,12 +200,9 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 
 		final int lx = localX(e);
 		final int ly = localY(e);
+		clearDragState();
 		pressPoint = new Point(lx, ly);
 		titleDragOffset = new Point(lx, ly);
-		titleDrag = false;
-		thumbDrag = false;
-		slotDragArmed = false;
-		slotDragActive = false;
 
 		controller.post(() ->
 		{
@@ -244,7 +260,7 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 	@Override
 	public MouseEvent mouseDragged(MouseEvent e)
 	{
-		lastMouse = new Point(e.getX(), e.getY());
+		trackMouse(e);
 
 		if (!open)
 		{
@@ -287,13 +303,13 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 			return consume(e);
 		}
 
-		return inside(e) ? consume(e) : e;
+		return pressConsumed ? consume(e) : e;
 	}
 
 	@Override
 	public MouseEvent mouseReleased(MouseEvent e)
 	{
-		lastMouse = new Point(e.getX(), e.getY());
+		trackMouse(e);
 
 		final boolean wasDragging = titleDrag || thumbDrag || slotDragActive;
 		final boolean consumed = pressConsumed || (open && (inside(e) || wasDragging));
@@ -316,12 +332,8 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 			});
 		}
 
-		titleDrag = false;
-		thumbDrag = false;
-		slotDragArmed = false;
-		slotDragActive = false;
-		pressPoint = null;
-		titleDragOffset = null;
+		clearDragState();
+		clickConsumed = consumed;
 		pressConsumed = false;
 
 		return consumed ? consume(e) : e;
@@ -330,7 +342,9 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 	@Override
 	public MouseEvent mouseClicked(MouseEvent e)
 	{
-		return inside(e) ? consume(e) : e;
+		final boolean consume = clickConsumed || inside(e);
+		clickConsumed = false;
+		return consume ? consume(e) : e;
 	}
 
 	@Override
@@ -365,7 +379,7 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 	@Override
 	public void keyTyped(KeyEvent e)
 	{
-		if (!open)
+		if (!controller.isOpen())
 		{
 			return;
 		}
@@ -383,7 +397,7 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 	@Override
 	public void keyPressed(KeyEvent e)
 	{
-		if (!open)
+		if (!controller.isOpen())
 		{
 			return;
 		}
@@ -398,7 +412,7 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 					{
 						model.closeMenu();
 					}
-					else if (model.getSearch() != null && !model.getSearch().isEmpty())
+					else if (!model.getSearch().isEmpty())
 					{
 						model.clearSearch();
 					}
@@ -431,19 +445,16 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 	@Override
 	public void focusLost()
 	{
-		titleDrag = false;
-		thumbDrag = false;
-		slotDragArmed = false;
-		slotDragActive = false;
-		pressPoint = null;
-		titleDragOffset = null;
+		clearDragState();
 		pressConsumed = false;
+		clickConsumed = false;
 
 		controller.post(() ->
 		{
-			controller.getViewModel().cancelDrag();
-			controller.getViewModel().closeMenu();
-			controller.getViewModel().setSearchFocused(false);
+			final BankViewModel model = controller.getViewModel();
+			model.cancelDrag();
+			model.closeMenu();
+			model.setSearchFocused(false);
 		});
 	}
 }

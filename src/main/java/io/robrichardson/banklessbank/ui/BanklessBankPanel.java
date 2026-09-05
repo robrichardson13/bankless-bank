@@ -15,6 +15,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.ui.ColorScheme;
@@ -32,7 +33,7 @@ public class BanklessBankPanel extends PluginPanel
 
 	private final BanklessBankPlugin plugin;
 	private final DwmsImporter importer;
-	private final net.runelite.api.Client client;
+	private final Client client;
 	private final ClientThread clientThread;
 
 	private final JLabel dwmsStatusLabel = new JLabel();
@@ -44,7 +45,7 @@ public class BanklessBankPanel extends PluginPanel
 	public BanklessBankPanel(
 		BanklessBankPlugin plugin,
 		DwmsImporter importer,
-		net.runelite.api.Client client,
+		Client client,
 		ClientThread clientThread)
 	{
 		this.plugin = plugin;
@@ -71,9 +72,11 @@ public class BanklessBankPanel extends PluginPanel
 
 		fillGapsButton.addActionListener(e -> runImport(DwmsImporter.Mode.FILL_GAPS));
 		fillGapsButton.setBackground(ColorScheme.BRAND_ORANGE);
+		fillGapsButton.setHorizontalAlignment(SwingConstants.CENTER);
 		content.add(fillGapsButton);
 
 		overwriteButton.addActionListener(e -> runImport(DwmsImporter.Mode.OVERWRITE));
+		overwriteButton.setHorizontalAlignment(SwingConstants.CENTER);
 		content.add(overwriteButton);
 
 		JLabel hint = new JLabel("<html>Fill gaps only imports storages Bankless Bank has no data for. "
@@ -96,11 +99,11 @@ public class BanklessBankPanel extends PluginPanel
 		lastImportLabel.setText("Importing...");
 
 		// The callback already runs on the client thread, which is where reload() has to happen;
-		// only the Swing update is bounced to the EDT.
+		// refresh() bounces itself to the EDT.
 		clientThread.invoke(() -> importer.importNow(mode, result ->
 		{
 			plugin.reload();
-			SwingUtilities.invokeLater(this::refresh);
+			refresh();
 		}));
 	}
 
@@ -112,8 +115,6 @@ public class BanklessBankPanel extends PluginPanel
 			SwingUtilities.invokeLater(this::refresh);
 			return;
 		}
-
-		boolean loggedIn = client.getGameState() == GameState.LOGGED_IN;
 
 		if (!importer.isDwmsInstalled())
 		{
@@ -142,10 +143,8 @@ public class BanklessBankPanel extends PluginPanel
 			lastImportLabel.setText("<html>" + TIMESTAMP_FORMAT.format(new Date()) + "<br>" + result.getMessage() + "</html>");
 		}
 
-		boolean enabled = loggedIn && !importer.isImporting();
+		boolean enabled = client.getGameState() == GameState.LOGGED_IN && !importer.isImporting();
 		fillGapsButton.setEnabled(enabled);
 		overwriteButton.setEnabled(enabled);
-		fillGapsButton.setHorizontalAlignment(SwingConstants.CENTER);
-		overwriteButton.setHorizontalAlignment(SwingConstants.CENTER);
 	}
 }
