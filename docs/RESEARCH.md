@@ -67,7 +67,8 @@ Storage keys live in each `*StorageType` enum's `configKey` field (e.g.
 Serialisation is in `SaveFieldFormatter.java` / `SaveFieldLoader.java` in the same package. The format is internal to DWMS and
 could change, so treat this as a one-time import path, not the primary sync.
 
-Decision: see section 5. A is the DWMS sync path; B is kept only as a one-time import.
+Decision: see section 5. Both A and B are one-time import paths. A is preferred (DWMS running);
+B covers DWMS installed but disabled.
 
 ### Hub precedent for consuming DWMS
 
@@ -76,7 +77,8 @@ hub (`plugin-hub/plugins/loadout-lab` -> `AKAddons/runelite-loadout-lab`). Loado
 standalone and offers DWMS as an optional data source under a "Connections" config section.
 That is the accepted shape: the plugin must be useful on its own, and DWMS is an enhancement.
 No hub-listed plugin hard-requires another hub plugin, and the hub review wiki says nothing
-either way, so a pure companion plugin is a review risk we avoid.
+either way, so a pure companion plugin is a review risk we avoid. We go further than Loadout
+Lab: DWMS is only a bootstrap, never a runtime dependency.
 
 ## 2. Rendering a bank-like UI in game
 
@@ -122,28 +124,61 @@ context menu offers "Release all placeholders".
 
 ## 5. Decisions from scoping (2026-09-05)
 
-**Data sources are tiered so the plugin is useful without DWMS.**
+**We own all item tracking. DWMS is a one-time bootstrap.**
 
-| Tier | Source | Mechanism | Ships in |
-|------|--------|-----------|----------|
-| 1 | Inventory, equipment, and every carryable container the client exposes as an `ItemContainer` (looting bag, seed box, herb sack, tackle box, forestry kit, huntsman's kit, chugging barrel) plus varbit-backed ones (rune pouch, quiver, bolt pouch) | Native: `ItemContainerChanged`, `VarbitChanged`, `net.runelite.api.gameval.InventoryID` | v1 |
-| 2 | POH storage, STASH units, death piles/graves/Death's Office, world storages (leprechaun, fossil storage, log storage, etc.), boat holds | Optional DWMS sync via `PluginMessage` (section 1A), toggled under a "Connections" config section, Loadout Lab style | v1 |
-| 3 | Native tracking for tier 2 storages | Port from DWMS's `*StorageManager` classes (chat message, menu click, widget and varbit driven) as durability demands | later |
+Event-driven tracking only sees changes that happen after the plugin is installed. STASH units,
+POH storage and old death piles were filled long ago, so a fresh tracker would show them empty
+until each is revisited. DWMS already holds that state, so we import it once as the starting
+snapshot and maintain it with our own trackers from then on. After import there is no runtime
+dependency on DWMS.
 
-Rationale: tier 1 covers what a UIM actually carries and costs little. Tier 2 in DWMS is ~40
-storages of message/menu parsing (its whole codebase); reimplementing that up front would delay
-the UI, which is the point of the plugin. DWMS stays optional, never required. When both native
-and DWMS report the same storage, native wins.
+### Porting the DWMS tracking layer
 
-**Launching the view.** Three entry points, all in v1:
+DWMS is BSD-2 (same as us). Copy with its copyright notice retained in each ported file. Line
+counts (excluding `*TabPanel` classes) as of v2.11.5:
+
+| DWMS package | Lines | Port? | Notes |
+|--------------|-------|-------|-------|
+| core (`Storage`, `ItemStorage`, `StorageManager`, `StorageManagerManager`, `ItemContainerWatcher`, `ItemStack`, `Var`, `SaveField*`) | 1,848 | yes | Strip `storagePanel` references and the Google Sheets `CellData` import in `ItemStack`. |
+| `carryable` | 1,904 | yes | Looting bag, rune pouch, herb sack, seed box, quiver, etc. |
+| `death` | 4,403 | yes | Deathpiles, graves, Death's Office, expiry timers. Info boxes / world map points are optional. |
+| `playerownedhouse` | 2,887 | yes | Costume room, menagerie, spice rack, cape hanger. |
+| `world` | 2,339 | yes | Leprechaun, fossil storage, log storage, potion storage, nests, etc. |
+| `stash` | 1,825 | yes | All STASH units. |
+| `sailing` | 687 | yes | Boat holds. |
+| `coins` | 483 | no (v1) | Coffers and GE coins are not items in a bank view. Revisit. |
+| `minigames` | 1,143 | no | Points, not items. |
+| panels, export, Google API deps | 3,714 | no | Replaced by our overlay. |
+
+Port into `io.robrichardson.banklessbank.tracking`, keeping DWMS's manager / storage type
+structure since it is proven and makes future upstream fixes easy to diff across. Persist with
+the same `ConfigManager` per-RS-profile pattern under our own group `banklessbank`.
+
+Maintenance trade: when Jagex adds a storage or changes a message, DWMS will patch it and we port
+the fix. Keep ported files structurally close to upstream so `diff` against
+`/Users/robrichardson/Code/robrichardson/dude-wheres-my-stuff` stays useful.
+
+### Bootstrap import from DWMS
+
+- Triggered automatically on first login for a profile with no saved data, and manually from an
+  "Import from Dude, Where's My Stuff?" button in the sidebar panel.
+- Path A (section 1A) when DWMS is running: post `storages-request`, consume `storages-response`.
+  `category` maps to our manager config key and `name` to the storage display name, because the
+  classes are ported one-to-one.
+- Path B (section 1B) when DWMS is installed but disabled: read its RS-profile config directly.
+- Default mode fills only storages we have no data for. An explicit "overwrite" option replaces
+  everything. Imports never run on a timer.
+
+### Launching the view
+
+Three entry points, all in v1:
 - A small always-visible HUD button drawn as its own movable `Overlay` (RuneLite overlays can be
   repositioned in overlay-edit mode), styled like a bank booth icon. Primary entry point.
-- A `NavigationButton` in the RuneLite sidebar, which also hosts sync status and a "Sync now" button.
+- A `NavigationButton` in the RuneLite sidebar, which also hosts tracking status and the import button.
 - A configurable hotkey.
 No dependence on being near a bank in game.
 
-**Sync cadence.** Tier 1 updates on events. Tier 2 requests DWMS on login, when the view opens,
-and on a "Sync now" click. No polling loop.
+### Other decisions
 
 **Publishing.** Target the plugin hub. Name: Bankless Bank. Keep hub constraints from section 3.
 
