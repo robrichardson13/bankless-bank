@@ -2,9 +2,9 @@
 
 Findings from the initial scoping session. Verified against local sources:
 
-- `~/Code/robrichardson/dude-wheres-my-stuff` (DWMS) at v2.11.5, `main` == `origin/main`
-- `~/Code/robrichardson/runelite` at 1.12.39-SNAPSHOT (2026-09-03)
-- `~/Code/robrichardson/alch-blocker` (prior plugin, used as the dev-loop template)
+- `/Users/robrichardson/Code/robrichardson/dude-wheres-my-stuff` (DWMS) at v2.11.5, `main` == `origin/main`
+- `/Users/robrichardson/Code/robrichardson/runelite` at 1.12.39-SNAPSHOT (2026-09-03)
+- `/Users/robrichardson/Code/robrichardson/alch-blocker` (prior plugin, used as the dev-loop template)
 - RuneLite plugin-hub README and example-plugin `build.gradle` (fetched 2026-09-05)
 
 ## 1. Getting DWMS's item data without forking
@@ -13,7 +13,8 @@ Two viable, hub-compliant routes. Both mean DWMS stays the tracker and Bankless 
 
 ### A. PluginMessage API (preferred, live)
 
-DWMS merged a cross-plugin API in PR #435 (shipped in 2.11.5). Source:
+DWMS merged a cross-plugin API in PR #435 (shipped in 2.11.5). Source (both in
+`/Users/robrichardson/Code/robrichardson/dude-wheres-my-stuff/src/main/java/dev/thource/runelite/dudewheresmystuff/`):
 `DudeWheresMyStuffPlugin.onPluginMessage` and `StorageManagerManager.getPluginMessageStorages`.
 
 Request (post on the RuneLite `EventBus`):
@@ -61,7 +62,9 @@ value: "<lastUpdated>;<id>x<qty>,<id>x<qty>,..."   (lastUpdated omitted for auto
 ```
 
 Read with `configManager.getConfiguration("dudewheresmystuff", configManager.getRSProfileKey(), key)`.
-Storage keys live in each `*StorageType` enum's `configKey` field. The format is internal to DWMS and
+Storage keys live in each `*StorageType` enum's `configKey` field (e.g.
+`/Users/robrichardson/Code/robrichardson/dude-wheres-my-stuff/src/main/java/dev/thource/runelite/dudewheresmystuff/carryable/CarryableStorageType.java`).
+Serialisation is in `SaveFieldFormatter.java` / `SaveFieldLoader.java` in the same package. The format is internal to DWMS and
 could change, so treat this as a one-time import path, not the primary sync.
 
 Decision: use A for sync, keep B in reserve for an "import once without DWMS running" feature.
@@ -70,8 +73,8 @@ Decision: use A for sync, keep B in reserve for an "import once without DWMS run
 
 Options considered:
 
-1. **Custom `Overlay` drawn with `Graphics2D`** (the approach of core `InventoryViewerOverlay`,
-   `runelite-client/.../plugins/inventoryviewer/`). Item sprites come from
+1. **Custom `Overlay` drawn with `Graphics2D`** (the approach of core `InventoryViewerOverlay` at
+   `/Users/robrichardson/Code/robrichardson/runelite/runelite-client/src/main/java/net/runelite/client/plugins/inventoryviewer/InventoryViewerOverlay.java`). Item sprites come from
    `ItemManager.getImage(id, qty, stackable)` (async `AsyncBufferedImage`). Bank chrome (borders,
    tab sprites, scrollbar) can be drawn from `SpriteManager` sprites or hand-drawn. Mouse input via
    `MouseManager`/`MouseListener`, keys via `KeyManager`. Fully under plugin control, and it is
@@ -89,7 +92,7 @@ bar, scroll) with our own drawing.
 - Hub plugins cannot compile-depend on other hub plugins; `PluginMessage` is the sanctioned bridge.
 - Local JDKs: Temurin 11 at `/Library/Java/JavaVirtualMachines/temurin-11.jdk`; default `java` is 17.
   Build with `JAVA_HOME=/Library/Java/JavaVirtualMachines/temurin-11.jdk/Contents/Home ./gradlew build`.
-- Gradle wrapper 7.4 (copied from alch-blocker).
+- Gradle wrapper 7.4 (copied from `/Users/robrichardson/Code/robrichardson/alch-blocker/gradle/`).
 - Legacy `net.runelite.api.widgets.ComponentID`/`InterfaceID` were removed in 2026; use
   `net.runelite.api.gameval.InterfaceID`, `InventoryID`, `ItemID`, `SpriteID`, `VarClientID`.
 
