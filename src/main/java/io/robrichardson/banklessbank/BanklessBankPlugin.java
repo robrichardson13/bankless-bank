@@ -1,6 +1,8 @@
 package io.robrichardson.banklessbank;
 
+import com.google.inject.Injector;
 import com.google.inject.Provides;
+import io.robrichardson.banklessbank.bootstrap.DwmsImporter;
 import io.robrichardson.banklessbank.tracking.ClientState;
 import io.robrichardson.banklessbank.tracking.ItemContainerWatcher;
 import io.robrichardson.banklessbank.tracking.StorageManagerManager;
@@ -10,7 +12,14 @@ import io.robrichardson.banklessbank.tracking.playerownedhouse.PlayerOwnedHouseS
 import io.robrichardson.banklessbank.tracking.sailing.SailingStorageManager;
 import io.robrichardson.banklessbank.tracking.stash.StashStorageManager;
 import io.robrichardson.banklessbank.tracking.world.WorldStorageManager;
+import io.robrichardson.banklessbank.ui.BankInputListener;
+import io.robrichardson.banklessbank.ui.BankOverlay;
+import io.robrichardson.banklessbank.ui.BankViewController;
+import io.robrichardson.banklessbank.ui.BanklessBankPanel;
+import io.robrichardson.banklessbank.ui.HudButtonOverlay;
+import java.awt.image.BufferedImage;
 import javax.inject.Inject;
+import javax.swing.SwingUtilities;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.runelite.api.Client;
@@ -35,12 +44,19 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.eventbus.EventBus;
 import net.runelite.client.eventbus.Subscribe;
 import net.runelite.client.events.ClientShutdown;
+import net.runelite.client.events.ConfigChanged;
 import net.runelite.client.events.ConfigSync;
+import net.runelite.client.events.PluginMessage;
 import net.runelite.client.events.RuneScapeProfileChanged;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.input.KeyManager;
+import net.runelite.client.input.MouseManager;
 import net.runelite.client.plugins.Plugin;
 import net.runelite.client.plugins.PluginDescriptor;
+import net.runelite.client.ui.ClientToolbar;
+import net.runelite.client.ui.NavigationButton;
 import net.runelite.client.ui.overlay.OverlayManager;
+import net.runelite.client.util.ImageUtil;
 
 @Slf4j
 @PluginDescriptor(
@@ -78,6 +94,36 @@ public class BanklessBankPlugin extends Plugin
 
 	@Inject
 	private EventBus eventBus;
+
+	@Inject
+	private Injector injector;
+
+	@Inject
+	private DwmsImporter dwmsImporter;
+
+	@Inject
+	private ClientToolbar clientToolbar;
+
+	@Inject
+	private MouseManager mouseManager;
+
+	@Inject
+	private KeyManager keyManager;
+
+	@Inject
+	private BankViewController viewController;
+
+	@Inject
+	private BankOverlay bankOverlay;
+
+	@Inject
+	private HudButtonOverlay hudButtonOverlay;
+
+	@Inject
+	private BankInputListener inputListener;
+
+	private BanklessBankPanel panel;
+	private NavigationButton navButton;
 
 	@Getter
 	@Inject
@@ -147,14 +193,100 @@ public class BanklessBankPlugin extends Plugin
 			clientState = ClientState.LOGGING_IN;
 		}
 
+		panel = injector.getInstance(BanklessBankPanel.class);
+
+		final BufferedImage icon = ImageUtil.loadImageResource(getClass(), "panel_icon.png");
+		navButton = NavigationButton.builder()
+			.tooltip("Bankless Bank")
+			.icon(icon)
+			.panel(panel)
+			.priority(5)
+			.build();
+		clientToolbar.addNavigation(navButton);
+
+		viewController.startUp();
+		overlayManager.add(bankOverlay);
+		if (config.showHudButton())
+		{
+			overlayManager.add(hudButtonOverlay);
+		}
+		mouseManager.registerMouseListener(0, inputListener);
+		mouseManager.registerMouseWheelListener(0, inputListener);
+		keyManager.registerKeyListener(inputListener);
+		keyManager.registerKeyListener(inputListener.getHotkeyListener());
+
 		log.debug("Bankless Bank started");
 	}
 
 	@Override
 	protected void shutDown()
 	{
+		mouseManager.unregisterMouseListener(inputListener);
+		mouseManager.unregisterMouseWheelListener(inputListener);
+		keyManager.unregisterKeyListener(inputListener);
+		keyManager.unregisterKeyListener(inputListener.getHotkeyListener());
+		overlayManager.remove(bankOverlay);
+		overlayManager.remove(hudButtonOverlay);
+		inputListener.publish(false, null, false);
+		inputListener.publishHud(false, null);
+		viewController.shutDown();
+
 		save();
+
+		if (navButton != null)
+		{
+			clientToolbar.removeNavigation(navButton);
+			navButton = null;
+		}
+		panel = null;
+
 		log.debug("Bankless Bank stopped");
+	}
+
+	/** Toggles the bank view overlay. Safe from any thread. */
+	public void toggleView()
+	{
+		viewController.toggle();
+	}
+
+	/** Opens or closes the bank view overlay. Safe from any thread. */
+	public void setViewOpen(boolean viewOpen)
+	{
+		viewController.setOpen(viewOpen);
+	}
+
+	/** Whether the bank view overlay is currently open. */
+	public boolean isViewOpen()
+	{
+		return viewController.isOpen();
+	}
+
+	@Subscribe
+	public void onConfigChanged(ConfigChanged configChanged)
+	{
+		if (!BanklessBankConfig.CONFIG_GROUP.equals(configChanged.getGroup()))
+		{
+			return;
+		}
+
+		if ("showHudButton".equals(configChanged.getKey()))
+		{
+			if (config.showHudButton())
+			{
+				overlayManager.add(hudButtonOverlay);
+			}
+			else
+			{
+				overlayManager.remove(hudButtonOverlay);
+				inputListener.publishHud(false, null);
+			}
+		}
+		else if ("placeholders".equals(configChanged.getKey())
+			|| "showEmptyStorages".equals(configChanged.getKey()))
+		{
+			viewController.post(() -> viewController.getViewModel().invalidate());
+			storagesChanged();
+		}
 	}
 
 	private void reset()
@@ -187,7 +319,47 @@ public class BanklessBankPlugin extends Plugin
 			storageManagerManager.reset();
 			storageManagerManager.load(profileKey);
 			storagesChanged();
+			maybeAutoImportFromDwms(profileKey);
 		});
+	}
+
+	/**
+	 * On first login for a profile with no tracked data of our own, and that we have never
+	 * imported into before, automatically pulls in whatever DWMS has (fill-gaps only, so it never
+	 * clobbers anything). No-op otherwise; the player can still trigger a manual import from the
+	 * sidebar panel at any time.
+	 */
+	private void maybeAutoImportFromDwms(String profileKey)
+	{
+		if (profileKey == null)
+		{
+			return;
+		}
+
+		if (dwmsImporter.hasOwnData(profileKey) || dwmsImporter.hasImportedBefore(profileKey))
+		{
+			return;
+		}
+
+		if (!dwmsImporter.hasDwmsData(profileKey) && !dwmsImporter.isDwmsEnabled())
+		{
+			return;
+		}
+
+		dwmsImporter.importNow(DwmsImporter.Mode.FILL_GAPS, result ->
+		{
+			log.debug("Auto-import from DWMS on first login: {}", result.getMessage());
+			reload();
+			refreshPanel();
+		});
+	}
+
+	private void refreshPanel()
+	{
+		if (panel != null)
+		{
+			SwingUtilities.invokeLater(panel::refresh);
+		}
 	}
 
 	/** Saves all tracked storages for the current profile. */
@@ -288,6 +460,13 @@ public class BanklessBankPlugin extends Plugin
 		ItemContainerWatcher.onGameTick(this);
 		storageManagerManager.onGameTick();
 		storageManagerManager.softUpdate();
+		dwmsImporter.onGameTick();
+	}
+
+	@Subscribe
+	public void onPluginMessage(PluginMessage pluginMessage)
+	{
+		dwmsImporter.onPluginMessage(pluginMessage);
 	}
 
 	@Subscribe
