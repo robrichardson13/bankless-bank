@@ -4,12 +4,12 @@ A RuneLite plugin that gives you a bank-style, in-game view of every item you ow
 walking to a bank. Made for Ultimate Ironmen.
 
 - Looks and feels like the real bank: tabs, item grid, search, scrolling
-- Shows items from your inventory, equipment, looting bag, POH, STASH units, death storage and more
+- Tracks your inventory, equipment, looting bag and other carried containers on its own
+- Optionally syncs POH, STASH units, death storage and world storages from
+  [Dude, Where's My Stuff?](https://github.com/Thource/dude-wheres-my-stuff) if you have it installed
 - Arrange items and tabs however you like; layout is saved per character
+- Open it from an always-visible HUD button, the sidebar, or a hotkey
 - View only. No withdrawing or depositing
-
-Item tracking comes from the [Dude, Where's My Stuff?](https://github.com/Thource/dude-wheres-my-stuff)
-plugin. Install both; Bankless Bank syncs from it automatically.
 
 ## Development
 

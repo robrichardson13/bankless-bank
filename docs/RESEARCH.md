@@ -67,7 +67,16 @@ Storage keys live in each `*StorageType` enum's `configKey` field (e.g.
 Serialisation is in `SaveFieldFormatter.java` / `SaveFieldLoader.java` in the same package. The format is internal to DWMS and
 could change, so treat this as a one-time import path, not the primary sync.
 
-Decision: use A for sync, keep B in reserve for an "import once without DWMS running" feature.
+Decision: see section 5. A is the DWMS sync path; B is kept only as a one-time import.
+
+### Hub precedent for consuming DWMS
+
+The DWMS API was contributed (PR #435) by the author of **Loadout Lab**, which is on the plugin
+hub (`plugin-hub/plugins/loadout-lab` -> `AKAddons/runelite-loadout-lab`). Loadout Lab works
+standalone and offers DWMS as an optional data source under a "Connections" config section.
+That is the accepted shape: the plugin must be useful on its own, and DWMS is an enhancement.
+No hub-listed plugin hard-requires another hub plugin, and the hub review wiki says nothing
+either way, so a pure companion plugin is a review risk we avoid.
 
 ## 2. Rendering a bank-like UI in game
 
@@ -86,6 +95,12 @@ Options considered:
 Decision: option 1. Mimic the bank's look (dark brown panel, 8-wide item grid, tab strip, search
 bar, scroll) with our own drawing.
 
+Checked the RuneLite "Rejected or Rolled-Back Features" wiki (2026-09-05): nothing forbids a
+bank-style item viewer. Relevant rules to respect: do not make the inventory pane click-through
+or remove its background; do not resize the spellbook; no crowdsourced player data; no HTTP
+exposure of player info; no autotyping. Our overlay must swallow its own clicks and never pass
+them to the game.
+
 ## 3. Build / tooling facts
 
 - Plugin hub requires Java 11 (`options.release.set(11)`), BSD-2 license, `runeLiteVersion = 'latest.release'`.
@@ -100,5 +115,37 @@ bar, scroll) with our own drawing.
 
 Store per RS profile in our own config group (`banklessbank`) via
 `configManager.setRSProfileConfiguration`, mirroring how DWMS and Bank Tags do it. Layout is
-keyed by canonical item id so it survives DWMS re-syncs. Items that vanish from the synced set
-keep their slot as a greyed placeholder (like real bank placeholders) until the user removes them.
+keyed by canonical item id so it survives DWMS re-syncs. Items that vanish from the tracked set
+keep their slot as a greyed placeholder (like real bank placeholders). Placeholders can be turned
+off globally in config; when on, right-clicking one offers "Release placeholder", and a tab's
+context menu offers "Release all placeholders".
+
+## 5. Decisions from scoping (2026-09-05)
+
+**Data sources are tiered so the plugin is useful without DWMS.**
+
+| Tier | Source | Mechanism | Ships in |
+|------|--------|-----------|----------|
+| 1 | Inventory, equipment, and every carryable container the client exposes as an `ItemContainer` (looting bag, seed box, herb sack, tackle box, forestry kit, huntsman's kit, chugging barrel) plus varbit-backed ones (rune pouch, quiver, bolt pouch) | Native: `ItemContainerChanged`, `VarbitChanged`, `net.runelite.api.gameval.InventoryID` | v1 |
+| 2 | POH storage, STASH units, death piles/graves/Death's Office, world storages (leprechaun, fossil storage, log storage, etc.), boat holds | Optional DWMS sync via `PluginMessage` (section 1A), toggled under a "Connections" config section, Loadout Lab style | v1 |
+| 3 | Native tracking for tier 2 storages | Port from DWMS's `*StorageManager` classes (chat message, menu click, widget and varbit driven) as durability demands | later |
+
+Rationale: tier 1 covers what a UIM actually carries and costs little. Tier 2 in DWMS is ~40
+storages of message/menu parsing (its whole codebase); reimplementing that up front would delay
+the UI, which is the point of the plugin. DWMS stays optional, never required. When both native
+and DWMS report the same storage, native wins.
+
+**Launching the view.** Three entry points, all in v1:
+- A small always-visible HUD button drawn as its own movable `Overlay` (RuneLite overlays can be
+  repositioned in overlay-edit mode), styled like a bank booth icon. Primary entry point.
+- A `NavigationButton` in the RuneLite sidebar, which also hosts sync status and a "Sync now" button.
+- A configurable hotkey.
+No dependence on being near a bank in game.
+
+**Sync cadence.** Tier 1 updates on events. Tier 2 requests DWMS on login, when the view opens,
+and on a "Sync now" click. No polling loop.
+
+**Publishing.** Target the plugin hub. Name: Bankless Bank. Keep hub constraints from section 3.
+
+**Placeholders.** On by default, global toggle, per-slot release via right-click, per-tab
+"release all". See section 4.
