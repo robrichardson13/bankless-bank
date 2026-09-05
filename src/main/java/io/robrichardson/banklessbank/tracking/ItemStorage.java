@@ -1,6 +1,8 @@
 /*
  * Ported from "Dude, Where's My Stuff?" by Thource (https://github.com/Thource/dude-wheres-my-stuff)
  * Copyright (c) 2022, Thource. Licensed under the BSD 2-Clause License.
+ *
+ * Bankless Bank changes: added importItems() for the one-time DWMS bootstrap.
  */
 package io.robrichardson.banklessbank.tracking;
 
@@ -166,6 +168,30 @@ public abstract class ItemStorage<T extends StorageType> extends Storage<T> {
     } else {
       items.clear();
     }
+  }
+
+  /**
+   * Replaces the tracked items with an imported snapshot (Bankless Bank bootstrap). Storages with
+   * a fixed item list only have their quantities updated.
+   *
+   * @param imported the item stacks to import
+   * @param importedLastUpdated the snapshot's lastUpdated, or -1 to use the current time
+   */
+  public void importItems(List<ItemStack> imported, long importedLastUpdated) {
+    if (hasStaticItems) {
+      items.forEach(item -> item.setQuantity(0));
+      for (ItemStack stack : imported) {
+        items.stream()
+            .filter(i -> i.getId() == stack.getId())
+            .findFirst()
+            .ifPresent(i -> i.setQuantity(i.getQuantity() + stack.getQuantity()));
+      }
+    } else {
+      items.clear();
+      items.addAll(imported);
+    }
+
+    lastUpdated = importedLastUpdated > 0 ? importedLastUpdated : System.currentTimeMillis();
   }
 
   /**

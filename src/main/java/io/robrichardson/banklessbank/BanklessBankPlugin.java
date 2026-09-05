@@ -190,7 +190,8 @@ public class BanklessBankPlugin extends Plugin
 		});
 	}
 
-	private void save()
+	/** Saves all tracked storages for the current profile. */
+	public void save()
 	{
 		if (profileKey == null)
 		{
@@ -198,6 +199,19 @@ public class BanklessBankPlugin extends Plugin
 		}
 
 		storageManagerManager.save(profileKey);
+	}
+
+	/** Re-reads all tracked storages from config (used after a bootstrap import). Client thread only. */
+	public void reload()
+	{
+		if (profileKey == null)
+		{
+			profileKey = configManager.getRSProfileKey();
+		}
+
+		storageManagerManager.reset();
+		storageManagerManager.load(profileKey);
+		storagesChanged();
 	}
 
 	@Subscribe
