@@ -363,6 +363,64 @@ public class BankViewModelTest
 		assertEquals(Hit.Type.GRID_EMPTY, hit.getType());
 	}
 
+	@Test
+	public void hitTestSeparatesTheScrollbarIntoArrowsThumbAndTrack()
+	{
+		for (int i = 1; i <= 200; i++)
+		{
+			layout.getMainTab().getSlots().add(i);
+		}
+		List<ItemSnapshot> items = new ArrayList<>();
+		for (int i = 1; i <= 200; i++)
+		{
+			items.add(item(i, "Item " + i, 1));
+		}
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
+			items.toArray(new ItemSnapshot[0]))));
+		model.rebuild();
+		assertTrue("the fixture must overflow the viewport", model.getMaxScroll() > 0);
+
+		java.awt.Rectangle up = model.scrollUpRect();
+		java.awt.Rectangle down = model.scrollDownRect();
+		java.awt.Rectangle thumb = model.scrollThumbRect();
+		java.awt.Rectangle track = model.scrollTrackRect();
+
+		assertEquals(Hit.Type.SCROLL_UP, model.hitTest(up.x + 1, up.y + 1).getType());
+		assertEquals(Hit.Type.SCROLL_DOWN, model.hitTest(down.x + 1, down.y + 1).getType());
+		assertEquals(Hit.Type.SCROLL_THUMB, model.hitTest(thumb.x + 1, thumb.y + 1).getType());
+		assertEquals(Hit.Type.SCROLL_TRACK,
+			model.hitTest(track.x + 1, track.y + track.height - 1).getType());
+	}
+
+	@Test
+	public void hitTestSeparatesTheBottomBarIntoSearchButtonFieldAndModeButton()
+	{
+		model.setSnapshots(Collections.emptyList());
+		model.rebuild();
+
+		java.awt.Rectangle searchButton = model.searchButtonRect();
+		java.awt.Rectangle field = model.searchRect();
+		java.awt.Rectangle mode = model.modeButtonRect();
+
+		assertEquals(Hit.Type.SEARCH_BUTTON,
+			model.hitTest(searchButton.x + 1, searchButton.y + 1).getType());
+		assertEquals(Hit.Type.SEARCH, model.hitTest(field.x + 1, field.y + 1).getType());
+		assertEquals(Hit.Type.MODE_BUTTON, model.hitTest(mode.x + 1, mode.y + 1).getType());
+	}
+
+	@Test
+	public void toggleModeFlipsBetweenTabsAndByStorageAndResetsScroll()
+	{
+		assertEquals(ViewMode.TABS, model.getMode());
+
+		model.toggleMode();
+		assertEquals(ViewMode.BY_STORAGE, model.getMode());
+		assertEquals(0, model.getScroll());
+
+		model.toggleMode();
+		assertEquals(ViewMode.TABS, model.getMode());
+	}
+
 	// ---- drag and drop ----
 
 	@Test

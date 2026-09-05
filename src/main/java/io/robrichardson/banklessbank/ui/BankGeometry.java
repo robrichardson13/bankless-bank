@@ -3,23 +3,38 @@ package io.robrichardson.banklessbank.ui;
 import java.awt.Dimension;
 import java.awt.Rectangle;
 
-/** All geometry constants and pure rect maths for the bank overlay. Static only. All rects are in
- * overlay-local coordinates (0,0 = overlay top-left). */
+/**
+ * All geometry constants and pure rect maths for the bank overlay. Static only. All rects are in
+ * overlay-local coordinates (0,0 = overlay top-left).
+ *
+ * <p>The numbers are taken from a 400x275 screenshot of the real bank interface, which is the
+ * game's 488x334 bank widget scaled by 400/488 = 0.8197. Dividing the measured pixels back out
+ * gives a 48x36 item slot on an 8-column grid, an 8px steel frame, a 16px scrollbar and a ~30px
+ * button bar along the bottom, which is what the constants below encode. Two places deliberately
+ * differ: the real bank keeps a ~58px gutter down the left for its deposit buttons, which a viewer
+ * has no use for, and its tab buttons are 48 wide, which we cannot afford because
+ * {@code [All] + 10 tabs + [+]} has to fit inside {@link #GRID_W} (384 / 12 = 32).
+ */
 public final class BankGeometry
 {
-	public static final int BORDER = 4;
-	public static final int TITLE_H = 24;
-	public static final int CLOSE_SIZE = 16;
-	public static final int TAB_STRIP_H = 40;
+	public static final int BORDER = 8;
+	public static final int TITLE_H = 26;
+	public static final int CLOSE_SIZE = 25;
+	public static final int TAB_STRIP_H = 36;
 	public static final int TAB_W = 32;
-	public static final int TAB_H = 36;
+	public static final int TAB_H = 32;
 	public static final int SLOT_W = 48;
 	public static final int SLOT_H = 36;
 	public static final int COLS = 8;
 	public static final int HEADER_H = 16;
-	public static final int SEARCH_H = 20;
-	public static final int SCROLLBAR_W = 12;
-	public static final int SCROLL_MIN_THUMB = 16;
+	/** Button bar along the bottom: search button, search text, view-mode button. */
+	public static final int BOTTOM_H = 30;
+	public static final int BOTTOM_BUTTON = 24;
+	public static final int MODE_BUTTON_W = 58;
+	public static final int SCROLLBAR_W = 16;
+	/** Height of each of the scrollbar's two arrow buttons; also their width. */
+	public static final int SCROLL_ARROW = 16;
+	public static final int SCROLL_MIN_THUMB = 20;
 	public static final int DEFAULT_ROWS = 6;
 	public static final int MIN_ROWS = 3;
 	public static final int MAX_ROWS = 14;
@@ -44,7 +59,7 @@ public final class BankGeometry
 
 	public static int height(int rows)
 	{
-		return BORDER * 2 + TITLE_H + TAB_STRIP_H + rows * SLOT_H + SEARCH_H;
+		return BORDER * 2 + TITLE_H + TAB_STRIP_H + rows * SLOT_H + BOTTOM_H;
 	}
 
 	public static Dimension size(int rows)
@@ -60,7 +75,7 @@ public final class BankGeometry
 	public static Rectangle closeButton()
 	{
 		Rectangle bar = titleBar();
-		int x = WIDTH - BORDER - 4 - CLOSE_SIZE;
+		int x = WIDTH - BORDER - 2 - CLOSE_SIZE;
 		int y = bar.y + (TITLE_H - CLOSE_SIZE) / 2;
 		return new Rectangle(x, y, CLOSE_SIZE, CLOSE_SIZE);
 	}
@@ -75,7 +90,7 @@ public final class BankGeometry
 	{
 		Rectangle strip = tabStrip();
 		int x = strip.x + stripIndex * TAB_W;
-		int y = strip.y + 2;
+		int y = strip.y + (TAB_STRIP_H - TAB_H) / 2;
 		return new Rectangle(x, y, TAB_W, TAB_H);
 	}
 
@@ -86,16 +101,61 @@ public final class BankGeometry
 		return new Rectangle(BORDER, y, GRID_W, rows * SLOT_H);
 	}
 
+	/** The whole scrollbar column: up arrow, track, down arrow. */
 	public static Rectangle scrollbar(int rows)
 	{
 		Rectangle grid = grid(rows);
 		return new Rectangle(grid.x + grid.width, grid.y, SCROLLBAR_W, grid.height);
 	}
 
-	public static Rectangle searchBox(int rows)
+	public static Rectangle scrollUp(int rows)
+	{
+		Rectangle bar = scrollbar(rows);
+		return new Rectangle(bar.x, bar.y, SCROLLBAR_W, SCROLL_ARROW);
+	}
+
+	public static Rectangle scrollDown(int rows)
+	{
+		Rectangle bar = scrollbar(rows);
+		return new Rectangle(bar.x, bar.y + bar.height - SCROLL_ARROW, SCROLLBAR_W, SCROLL_ARROW);
+	}
+
+	/** The draggable part of the scrollbar, between the two arrow buttons. */
+	public static Rectangle scrollTrack(int rows)
+	{
+		Rectangle bar = scrollbar(rows);
+		int h = Math.max(0, bar.height - SCROLL_ARROW * 2);
+		return new Rectangle(bar.x, bar.y + SCROLL_ARROW, SCROLLBAR_W, h);
+	}
+
+	/** The whole bottom button bar, full inner width. */
+	public static Rectangle bottomBar(int rows)
 	{
 		Rectangle grid = grid(rows);
-		return new Rectangle(BORDER, grid.y + grid.height, GRID_W + SCROLLBAR_W, SEARCH_H);
+		return new Rectangle(BORDER, grid.y + grid.height, GRID_W + SCROLLBAR_W, BOTTOM_H);
+	}
+
+	public static Rectangle searchButton(int rows)
+	{
+		Rectangle bar = bottomBar(rows);
+		return new Rectangle(bar.x + 2, bar.y + (BOTTOM_H - BOTTOM_BUTTON) / 2,
+			BOTTOM_BUTTON, BOTTOM_BUTTON);
+	}
+
+	public static Rectangle modeButton(int rows)
+	{
+		Rectangle bar = bottomBar(rows);
+		return new Rectangle(bar.x + bar.width - 2 - MODE_BUTTON_W,
+			bar.y + (BOTTOM_H - BOTTOM_BUTTON) / 2, MODE_BUTTON_W, BOTTOM_BUTTON);
+	}
+
+	/** The search text field: everything on the bar between the two buttons. */
+	public static Rectangle searchBox(int rows)
+	{
+		Rectangle button = searchButton(rows);
+		Rectangle mode = modeButton(rows);
+		int x = button.x + button.width + 3;
+		return new Rectangle(x, button.y, Math.max(0, mode.x - 3 - x), BOTTOM_BUTTON);
 	}
 
 	public static Rectangle slotInRow(int rowLocalY, int col)

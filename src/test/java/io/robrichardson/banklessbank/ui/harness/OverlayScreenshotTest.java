@@ -232,11 +232,22 @@ public class OverlayScreenshotTest
 		assertTrue(maxScroll > 0);
 		assertEquals("the wheel must clamp at the bottom", maxScroll, harness.model().getScroll());
 
-		final Rectangle track = harness.model().scrollbarRect();
+		final Rectangle track = harness.model().scrollTrackRect();
 		final Rectangle thumb = harness.model().scrollThumbRect();
 		assertTrue("the thumb must sit at the end of the track",
 			Math.abs((track.y + track.height) - (thumb.y + thumb.height)) <= 1);
 		shoot(harness, "10-scrolled-to-bottom");
+
+		// ---- k. the same open view, but with interface sprites available ------------------
+		// The other scenes all take the null-sprite path, which is what a test JVM without the game
+		// cache can serve. This one hands the overlay stand-in sprites of the real ones' sizes, so
+		// the 9-sliced frame, the tiled scrollbar dragger and the fitted icons are drawn too.
+		final BankHarness sprited = new BankHarness(true);
+		sprited.render();
+		sprited.openViaHudButton();
+		sprited.render(2);
+		assertEquals(BankGeometry.size(BankGeometry.DEFAULT_ROWS), sprited.lastRenderedSize());
+		shoot(sprited, "11-interface-sprites");
 
 		System.out.println("Bankless Bank render harness wrote:");
 		for (String path : WRITTEN)
@@ -346,6 +357,83 @@ public class OverlayScreenshotTest
 		assertEquals(before.get(1), after.get(0));
 		assertEquals(before.get(2), after.get(1));
 		assertEquals(before.get(0), after.get(2));
+	}
+
+	@Test
+	public void scrollbarArrowButtonsScrollOneRowEachWay()
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+		assertTrue("the fixture must overflow the viewport", harness.model().getMaxScroll() > 0);
+
+		harness.click(centreOnCanvas(harness, harness.model().scrollDownRect()));
+		harness.render(2);
+		assertEquals(BankGeometry.SCROLL_STEP, harness.model().getScroll());
+
+		harness.click(centreOnCanvas(harness, harness.model().scrollUpRect()));
+		harness.render(2);
+		assertEquals(0, harness.model().getScroll());
+	}
+
+	@Test
+	public void bottomBarModeButtonTogglesBetweenTabsAndByStorage()
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+		assertEquals(ViewMode.TABS, harness.model().getMode());
+
+		harness.click(centreOnCanvas(harness, harness.model().modeButtonRect()));
+		harness.render(2);
+		assertEquals(ViewMode.BY_STORAGE, harness.model().getMode());
+
+		harness.click(centreOnCanvas(harness, harness.model().modeButtonRect()));
+		harness.render(2);
+		assertEquals(ViewMode.TABS, harness.model().getMode());
+	}
+
+	@Test
+	public void bottomBarSearchButtonFocusesTheSearchField()
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+		assertFalse(harness.model().isSearchFocused());
+
+		harness.click(centreOnCanvas(harness, harness.model().searchButtonRect()));
+		harness.render(2);
+		assertTrue(harness.model().isSearchFocused());
+
+		harness.type("rune");
+		harness.render(2);
+		assertEquals("rune", harness.model().getSearch());
+	}
+
+	@Test
+	public void chromeRendersWithAndWithoutInterfaceSprites()
+	{
+		// The window must paint the same rect either way: sprites when the cache can serve them,
+		// flat fallbacks when it cannot. Only the pixels inside differ.
+		final BankHarness fallback = openedHarness();
+		fallback.render();
+
+		final BankHarness sprited = new BankHarness(true);
+		sprited.render();
+		sprited.openViaHudButton();
+		sprited.render(2);
+
+		assertEquals(fallback.lastRenderedSize(), sprited.lastRenderedSize());
+
+		final Rectangle frame = new Rectangle(fallback.origin().x, fallback.origin().y,
+			BankGeometry.WIDTH, BankGeometry.BORDER);
+		assertTrue("the frame band must be painted without sprites",
+			fallback.nonBackgroundPixels(frame) > frame.width);
+		assertTrue("the frame band must be painted with sprites",
+			sprited.nonBackgroundPixels(frame) > frame.width);
+	}
+
+	private static Point centreOnCanvas(BankHarness harness, Rectangle local)
+	{
+		final Rectangle r = harness.rectOnCanvas(local);
+		return new Point(r.x + r.width / 2, r.y + r.height / 2);
 	}
 
 	private static BankHarness openedHarness()

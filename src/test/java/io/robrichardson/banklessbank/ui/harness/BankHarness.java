@@ -45,6 +45,7 @@ import net.runelite.api.ItemComposition;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.Keybind;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.tooltip.Tooltip;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 import org.mockito.Mockito;
@@ -82,6 +83,7 @@ public final class BankHarness
 	private final Client client = Mockito.mock(Client.class);
 	private final ItemManager itemManager = Mockito.mock(ItemManager.class);
 	private final ConfigManager configManager = Mockito.mock(ConfigManager.class);
+	private final SpriteManager spriteManager = Mockito.mock(SpriteManager.class);
 	private final BanklessBankConfig config = Mockito.mock(BanklessBankConfig.class);
 	private final TooltipManager tooltipManager = new TooltipManager();
 
@@ -101,13 +103,21 @@ public final class BankHarness
 	private BufferedImage lastFrame;
 	private Dimension lastRenderedSize;
 
-	public BankHarness()
+	/**
+	 * @param interfaceSprites when false {@code SpriteManager} returns null for every id, which is
+	 *                         what the client does before the cache is up and is the only thing a
+	 *                         test JVM can do; the overlay then paints its flat-colour fallbacks.
+	 *                         When true it serves {@link FakeInterfaceSprites} stand-ins, so the
+	 *                         9-slice, tiling and fitting paths are exercised too.
+	 */
+	public BankHarness(boolean interfaceSprites)
 	{
 		sprites = new FakeItemSprites(fixture.names());
 
 		stubConfig();
 		stubClient();
 		stubItemManager();
+		stubSpriteManager(interfaceSprites);
 		stubConfigManager();
 		stubPlugin();
 
@@ -116,12 +126,18 @@ public final class BankHarness
 
 		controller = UiHarnessParts.controller(plugin, client, itemManager, configManager, config, layoutStore);
 		listener = UiHarnessParts.listener(config, controller);
-		bankOverlay = UiHarnessParts.bankOverlay(client, itemManager, config, controller, listener, tooltipManager);
+		bankOverlay = UiHarnessParts.bankOverlay(client, itemManager, spriteManager, config, controller,
+			listener, tooltipManager);
 		hudOverlay = UiHarnessParts.hudOverlay(controller, listener);
 
 		controller.startUp();
 
 		backgroundOnly = newCanvas();
+	}
+
+	public BankHarness()
+	{
+		this(false);
 	}
 
 	// ---- mocks -----------------------------------------------------------------------------
@@ -153,6 +169,13 @@ public final class BankHarness
 			Mockito.when(composition.getName()).thenReturn(fixture.names().getOrDefault(id, "Item " + id));
 			return composition;
 		});
+	}
+
+	private void stubSpriteManager(boolean interfaceSprites)
+	{
+		final FakeInterfaceSprites stand = interfaceSprites ? new FakeInterfaceSprites() : null;
+		Mockito.when(spriteManager.getSprite(anyInt(), anyInt()))
+			.thenAnswer(inv -> stand == null ? null : stand.get((Integer) inv.getArgument(0)));
 	}
 
 	private void stubConfigManager()

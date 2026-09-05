@@ -36,7 +36,7 @@ public class BankGeometryTest
 		Rectangle title = BankGeometry.titleBar();
 		Rectangle close = BankGeometry.closeButton();
 		assertTrue(title.contains(close));
-		assertEquals(BankGeometry.WIDTH - BankGeometry.BORDER - 4 - BankGeometry.CLOSE_SIZE, close.x);
+		assertEquals(BankGeometry.WIDTH - BankGeometry.BORDER - 2 - BankGeometry.CLOSE_SIZE, close.x);
 	}
 
 	@Test
@@ -73,12 +73,60 @@ public class BankGeometryTest
 	}
 
 	@Test
-	public void searchBoxSitsDirectlyBelowGrid()
+	public void bottomBarSitsDirectlyBelowGridAndSpansGridPlusScrollbar()
 	{
 		Rectangle grid = BankGeometry.grid(6);
-		Rectangle search = BankGeometry.searchBox(6);
-		assertEquals(grid.y + grid.height, search.y);
-		assertEquals(BankGeometry.SEARCH_H, search.height);
+		Rectangle bar = BankGeometry.bottomBar(6);
+		assertEquals(grid.y + grid.height, bar.y);
+		assertEquals(BankGeometry.BOTTOM_H, bar.height);
+		assertEquals(BankGeometry.GRID_W + BankGeometry.SCROLLBAR_W, bar.width);
+	}
+
+	@Test
+	public void bottomBarHoldsSearchButtonThenFieldThenModeButton()
+	{
+		Rectangle bar = BankGeometry.bottomBar(6);
+		Rectangle button = BankGeometry.searchButton(6);
+		Rectangle field = BankGeometry.searchBox(6);
+		Rectangle mode = BankGeometry.modeButton(6);
+
+		assertTrue(bar.contains(button));
+		assertTrue(bar.contains(field));
+		assertTrue(bar.contains(mode));
+		assertTrue("the field starts right of the search button", field.x > button.x + button.width - 1);
+		assertTrue("the field ends left of the mode button", field.x + field.width <= mode.x);
+		assertEquals(BankGeometry.MODE_BUTTON_W, mode.width);
+	}
+
+	@Test
+	public void geometryMatchesTheRealBankSlotPitchAndFrame()
+	{
+		// 48x36 slots on 8 columns, an 8px steel frame and a 16px scrollbar, measured off the real
+		// bank interface. Guards against the constants drifting back to hand-picked values.
+		assertEquals(48, BankGeometry.SLOT_W);
+		assertEquals(36, BankGeometry.SLOT_H);
+		assertEquals(8, BankGeometry.COLS);
+		assertEquals(8, BankGeometry.BORDER);
+		assertEquals(16, BankGeometry.SCROLLBAR_W);
+		assertEquals(416, BankGeometry.WIDTH);
+	}
+
+	@Test
+	public void scrollbarSplitsIntoTwoArrowsAndATrackBetweenThem()
+	{
+		Rectangle bar = BankGeometry.scrollbar(6);
+		Rectangle up = BankGeometry.scrollUp(6);
+		Rectangle down = BankGeometry.scrollDown(6);
+		Rectangle track = BankGeometry.scrollTrack(6);
+
+		assertEquals(bar.y, up.y);
+		assertEquals(BankGeometry.SCROLL_ARROW, up.height);
+		assertEquals(bar.y + bar.height, down.y + down.height);
+		assertEquals(BankGeometry.SCROLL_ARROW, down.height);
+		assertEquals(up.y + up.height, track.y);
+		assertEquals(down.y, track.y + track.height);
+		assertEquals(bar.x, track.x);
+		assertEquals(BankGeometry.SCROLLBAR_W, track.width);
 	}
 
 	@Test

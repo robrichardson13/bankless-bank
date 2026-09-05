@@ -6,6 +6,7 @@ import io.robrichardson.banklessbank.model.LayoutStore;
 import net.runelite.api.Client;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
+import net.runelite.client.game.SpriteManager;
 import net.runelite.client.ui.overlay.tooltip.TooltipManager;
 
 /**
@@ -33,10 +34,11 @@ public final class UiHarnessParts
 	}
 
 	public static BankOverlay bankOverlay(Client client, ItemManager itemManager,
-		BanklessBankConfig config, BankViewController controller, BankInputListener listener,
-		TooltipManager tooltipManager)
+		SpriteManager spriteManager, BanklessBankConfig config, BankViewController controller,
+		BankInputListener listener, TooltipManager tooltipManager)
 	{
-		return new BankOverlay(client, itemManager, config, controller, listener, tooltipManager);
+		return new BankOverlay(client, itemManager, spriteManager, config, controller, listener,
+			tooltipManager);
 	}
 
 	public static HudButtonOverlay hudOverlay(BankViewController controller, BankInputListener listener)

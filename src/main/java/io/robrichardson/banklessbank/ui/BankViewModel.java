@@ -158,6 +158,12 @@ public class BankViewModel
 		invalidate();
 	}
 
+	/** Flips between the tab view and the by-storage view. Bound to the bottom bar's mode button. */
+	public void toggleMode()
+	{
+		setMode(mode == ViewMode.TABS ? ViewMode.BY_STORAGE : ViewMode.TABS);
+	}
+
 	public int getActiveTab()
 	{
 		return activeTab;
@@ -497,7 +503,7 @@ public class BankViewModel
 
 	public void scrollThumbTo(int localY)
 	{
-		Rectangle track = scrollbarRect();
+		Rectangle track = scrollTrackRect();
 		Rectangle thumbNow = scrollThumbRect();
 		int range = track.height - thumbNow.height;
 		if (range <= 0 || getMaxScroll() <= 0)
@@ -539,19 +545,53 @@ public class BankViewModel
 		return BankGeometry.grid(visibleRows);
 	}
 
+	/** The whole bottom button bar. */
+	public Rectangle bottomBarRect()
+	{
+		return BankGeometry.bottomBar(visibleRows);
+	}
+
+	/** The search text field, between the search button and the view-mode button. */
 	public Rectangle searchRect()
 	{
 		return BankGeometry.searchBox(visibleRows);
 	}
 
+	public Rectangle searchButtonRect()
+	{
+		return BankGeometry.searchButton(visibleRows);
+	}
+
+	public Rectangle modeButtonRect()
+	{
+		return BankGeometry.modeButton(visibleRows);
+	}
+
+	/** The whole scrollbar column, arrow buttons included. */
 	public Rectangle scrollbarRect()
 	{
 		return BankGeometry.scrollbar(visibleRows);
 	}
 
+	public Rectangle scrollUpRect()
+	{
+		return BankGeometry.scrollUp(visibleRows);
+	}
+
+	public Rectangle scrollDownRect()
+	{
+		return BankGeometry.scrollDown(visibleRows);
+	}
+
+	/** The draggable stretch of scrollbar between the two arrow buttons. */
+	public Rectangle scrollTrackRect()
+	{
+		return BankGeometry.scrollTrack(visibleRows);
+	}
+
 	public Rectangle scrollThumbRect()
 	{
-		return BankGeometry.thumb(scrollbarRect(), scroll, getMaxScroll(), contentHeight, getViewportHeight());
+		return BankGeometry.thumb(scrollTrackRect(), scroll, getMaxScroll(), contentHeight, getViewportHeight());
 	}
 
 	/** Local rect of flat slot index i, already offset by scroll. May lie outside the grid. */
@@ -647,17 +687,34 @@ public class BankViewModel
 			return Hit.of(Hit.Type.GRID_EMPTY, -1);
 		}
 
-		if (searchRect().contains(x, y))
+		if (scrollUpRect().contains(x, y))
 		{
-			return Hit.of(Hit.Type.SEARCH, -1);
+			return Hit.of(Hit.Type.SCROLL_UP, -1);
+		}
+		if (scrollDownRect().contains(x, y))
+		{
+			return Hit.of(Hit.Type.SCROLL_DOWN, -1);
 		}
 		if (scrollThumbRect().contains(x, y))
 		{
 			return Hit.of(Hit.Type.SCROLL_THUMB, -1);
 		}
-		if (scrollbarRect().contains(x, y))
+		if (scrollTrackRect().contains(x, y))
 		{
 			return Hit.of(Hit.Type.SCROLL_TRACK, -1);
+		}
+
+		if (searchButtonRect().contains(x, y))
+		{
+			return Hit.of(Hit.Type.SEARCH_BUTTON, -1);
+		}
+		if (modeButtonRect().contains(x, y))
+		{
+			return Hit.of(Hit.Type.MODE_BUTTON, -1);
+		}
+		if (searchRect().contains(x, y))
+		{
+			return Hit.of(Hit.Type.SEARCH, -1);
 		}
 
 		return Hit.none();

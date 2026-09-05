@@ -223,7 +223,8 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 			}
 
 			final Hit hit = model.hitTest(lx, ly);
-			model.setSearchFocused(hit.getType() == Hit.Type.SEARCH);
+			model.setSearchFocused(hit.getType() == Hit.Type.SEARCH
+				|| hit.getType() == Hit.Type.SEARCH_BUTTON);
 			switch (hit.getType())
 			{
 				case CLOSE:
@@ -234,7 +235,18 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 					controller.saveViewState();
 					break;
 				case SEARCH:
+				case SEARCH_BUTTON:
 					// focus was set above
+					break;
+				case MODE_BUTTON:
+					model.toggleMode();
+					controller.saveViewState();
+					break;
+				case SCROLL_UP:
+					model.scrollBy(-BankGeometry.SCROLL_STEP);
+					break;
+				case SCROLL_DOWN:
+					model.scrollBy(BankGeometry.SCROLL_STEP);
 					break;
 				case SCROLL_TRACK:
 					model.scrollBy(ly < model.scrollThumbRect().y
