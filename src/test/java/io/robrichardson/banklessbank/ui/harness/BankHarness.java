@@ -10,7 +10,6 @@ import io.robrichardson.banklessbank.BanklessBankPlugin;
 import io.robrichardson.banklessbank.model.BankLayout;
 import io.robrichardson.banklessbank.model.LayoutStore;
 import io.robrichardson.banklessbank.tracking.StorageManagerManager;
-import io.robrichardson.banklessbank.ui.BankGeometry;
 import io.robrichardson.banklessbank.ui.BankInputListener;
 import io.robrichardson.banklessbank.ui.BankOverlay;
 import io.robrichardson.banklessbank.ui.BankViewController;
@@ -39,6 +38,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import javax.imageio.ImageIO;
 import net.runelite.api.Client;
 import net.runelite.api.ItemComposition;
@@ -46,8 +46,9 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.config.Keybind;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
-import net.runelite.client.ui.overlay.tooltip.Tooltip;
-import net.runelite.client.ui.overlay.tooltip.TooltipManager;
+import net.runelite.client.game.chatbox.ChatboxItemSearch;
+import net.runelite.client.game.chatbox.ChatboxTextInput;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
 import org.mockito.stubbing.Answer;
 
@@ -85,7 +86,12 @@ public final class BankHarness
 	private final ConfigManager configManager = Mockito.mock(ConfigManager.class);
 	private final SpriteManager spriteManager = Mockito.mock(SpriteManager.class);
 	private final BanklessBankConfig config = Mockito.mock(BanklessBankConfig.class);
-	private final TooltipManager tooltipManager = new TooltipManager();
+	/** RETURNS_SELF so the builder chain in {@code openItemSearch()} survives; build() does nothing. */
+	private final ChatboxItemSearch itemSearch =
+		Mockito.mock(ChatboxItemSearch.class, Mockito.RETURNS_SELF);
+	/** Same shape as {@link #itemSearch}, for {@code openTabRename()}'s builder chain. */
+	private final ChatboxTextInput tabRenameInput =
+		Mockito.mock(ChatboxTextInput.class, Mockito.RETURNS_SELF);
 
 	private final Map<String, String> configStore = new HashMap<>();
 
@@ -124,10 +130,11 @@ public final class BankHarness
 		final LayoutStore layoutStore = new LayoutStore(configManager, new Gson());
 		layoutStore.save(PROFILE_KEY, FakeStorages.savedLayout());
 
-		controller = UiHarnessParts.controller(plugin, client, itemManager, configManager, config, layoutStore);
+		controller = UiHarnessParts.controller(plugin, client, itemManager, configManager, config,
+			layoutStore, itemSearch, tabRenameInput);
 		listener = UiHarnessParts.listener(config, controller);
 		bankOverlay = UiHarnessParts.bankOverlay(client, itemManager, spriteManager, config, controller,
-			listener, tooltipManager);
+			listener);
 		hudOverlay = UiHarnessParts.hudOverlay(controller, listener);
 
 		controller.startUp();
@@ -147,6 +154,9 @@ public final class BankHarness
 		Mockito.when(config.placeholders()).thenReturn(true);
 		Mockito.when(config.showEmptyStorages()).thenReturn(false);
 		Mockito.when(config.showHudButton()).thenReturn(true);
+		// Matches BanklessBankConfig.showValue()'s own default; without it the mock returns false and
+		// the title bar silently renders with no GE value at all.
+		Mockito.when(config.showValue()).thenReturn(true);
 		Mockito.when(config.toggleKeybind()).thenReturn(Keybind.NOT_SET);
 	}
 
@@ -168,6 +178,13 @@ public final class BankHarness
 			final ItemComposition composition = Mockito.mock(ItemComposition.class);
 			Mockito.when(composition.getName()).thenReturn(fixture.names().getOrDefault(id, "Item " + id));
 			return composition;
+		});
+		// A deterministic, varied fixture price per id, so the title value and the GE tooltip line
+		// have something real to show. Coins price their own currency at 1, as the real GE does.
+		Mockito.when(itemManager.getItemPrice(anyInt())).thenAnswer(inv ->
+		{
+			final int id = inv.getArgument(0);
+			return id == FakeStorages.COINS ? 1 : 100 + (id % 900) * 137;
 		});
 	}
 
@@ -208,11 +225,16 @@ public final class BankHarness
 		};
 		Mockito.when(configManager.getConfiguration(anyString(), anyString(), any(Type.class))).thenAnswer(typed);
 
-		Mockito.doAnswer(inv ->
+		final Answer<Object> put3 = inv ->
 		{
 			configStore.put(key(inv.getArgument(0), null, inv.getArgument(1)), String.valueOf((Object) inv.getArgument(2)));
 			return null;
-		}).when(configManager).setConfiguration(anyString(), anyString(), any());
+		};
+		Mockito.doAnswer(put3).when(configManager).setConfiguration(anyString(), anyString(), any());
+		// ConfigManager overloads setConfiguration(group, key, value) for String and, separately,
+		// generically for any T. The stub above only covers the String one, so an int value (the
+		// window's saved rows and columns) would otherwise vanish into an unstubbed method.
+		Mockito.doAnswer(put3).when(configManager).setConfiguration(anyString(), anyString(), (Object) any());
 
 		Mockito.doAnswer(inv ->
 		{
@@ -264,19 +286,15 @@ public final class BankHarness
 		return controller.getViewModel().getLayout();
 	}
 
+	/** A value written to the plugin's own (non-profile) config group, or null. */
+	public String configValue(String name)
+	{
+		return configStore.get(key(BanklessBankConfig.CONFIG_GROUP, null, name));
+	}
+
 	public FakeStorages fixture()
 	{
 		return fixture;
-	}
-
-	public List<Tooltip> tooltips()
-	{
-		return tooltipManager.getTooltips();
-	}
-
-	public void clearTooltips()
-	{
-		tooltipManager.clear();
 	}
 
 	public BufferedImage lastFrame()
@@ -304,6 +322,12 @@ public final class BankHarness
 	public void markStoragesDirty()
 	{
 		storagesDirty = true;
+	}
+
+	/** Flips the "show GE value" config item, as the settings panel would. */
+	public void setShowValue(boolean show)
+	{
+		Mockito.when(config.showValue()).thenReturn(show);
 	}
 
 	// ---- rendering -------------------------------------------------------------------------
@@ -421,6 +445,25 @@ public final class BankHarness
 		return count;
 	}
 
+	/** Count of pixels in {@code rect} painted exactly {@code colour}. */
+	public int pixelsOfColour(Rectangle rect, Color colour)
+	{
+		final int rgb = colour.getRGB();
+		int count = 0;
+		final Rectangle clipped = rect.intersection(new Rectangle(0, 0, CANVAS_W, CANVAS_H));
+		for (int y = clipped.y; y < clipped.y + clipped.height; y++)
+		{
+			for (int x = clipped.x; x < clipped.x + clipped.width; x++)
+			{
+				if (lastFrame.getRGB(x, y) == rgb)
+				{
+					count++;
+				}
+			}
+		}
+		return count;
+	}
+
 	/** Distinct colours in a canvas rect; a drawn item sprite has many, an empty slot has few. */
 	public int distinctColours(Rectangle rect)
 	{
@@ -481,6 +524,13 @@ public final class BankHarness
 	public Point centreOfSlot(int flatIndex)
 	{
 		final Rectangle r = slotRectOnCanvas(flatIndex);
+		return new Point(r.x + r.width / 2, r.y + r.height / 2);
+	}
+
+	/** Canvas centre of the bottom-right resize grip. */
+	public Point gripCentre()
+	{
+		final Rectangle r = rectOnCanvas(model().resizeGripRect());
 		return new Point(r.x + r.width / 2, r.y + r.height / 2);
 	}
 
@@ -553,6 +603,15 @@ public final class BankHarness
 		return listener.mouseWheelMoved(e);
 	}
 
+	/** Shift + wheel, which is the horizontal scroll gesture. */
+	public MouseWheelEvent shiftWheel(int x, int y, int rotation)
+	{
+		final MouseWheelEvent e = new MouseWheelEvent(EVENT_SOURCE, MouseEvent.MOUSE_WHEEL,
+			System.currentTimeMillis(), MouseEvent.SHIFT_DOWN_MASK, x, y, 0, false,
+			MouseWheelEvent.WHEEL_UNIT_SCROLL, 1, rotation);
+		return listener.mouseWheelMoved(e);
+	}
+
 	public void type(String text)
 	{
 		for (char c : text.toCharArray())
@@ -582,12 +641,53 @@ public final class BankHarness
 	/** Clicks a tab-strip entry: 0 = [All], 1 = main tab, 2.. = custom tabs. */
 	public void clickTab(int stripIndex)
 	{
-		click(rectCentre(rectOnCanvas(BankGeometry.tabAt(stripIndex))));
+		click(rectCentre(rectOnCanvas(model().tabRect(stripIndex))));
 	}
 
 	public void clickSearchBox()
 	{
 		click(rectCentre(rectOnCanvas(model().searchRect())));
+	}
+
+	/** Clicks the bottom bar's add button, which opens the game's item search. */
+	public void clickAddButton()
+	{
+		click(rectCentre(rectOnCanvas(model().addButtonRect())));
+	}
+
+	/**
+	 * Stands in for the player picking an item in the chatbox item search: replays the callbacks the
+	 * real {@code ChatboxItemSearch} would fire - the selection, then the panel closing itself - onto
+	 * the ones {@code openItemSearch()} registered on the mock.
+	 */
+	@SuppressWarnings("unchecked")
+	public void pickInItemSearch(int itemId)
+	{
+		final ArgumentCaptor<Consumer<Integer>> selected = ArgumentCaptor.forClass(Consumer.class);
+		Mockito.verify(itemSearch, Mockito.atLeastOnce()).onItemSelected(selected.capture());
+		final ArgumentCaptor<Runnable> closed = ArgumentCaptor.forClass(Runnable.class);
+		Mockito.verify(itemSearch, Mockito.atLeastOnce()).onClose(closed.capture());
+
+		selected.getValue().accept(itemId);
+		closed.getValue().run();
+	}
+
+	/**
+	 * Stands in for the player typing a name and pressing Enter in the chatbox text input a tab's
+	 * "Rename tab" entry opens: replays the {@code onDone} then {@code onClose} callbacks
+	 * {@code openTabRename()} registered on the mock, exactly the way the real widget's Enter handler
+	 * calls {@code onDone} and then closes the panel.
+	 */
+	@SuppressWarnings("unchecked")
+	public void submitTabRename(String newName)
+	{
+		final ArgumentCaptor<Consumer<String>> done = ArgumentCaptor.forClass(Consumer.class);
+		Mockito.verify(tabRenameInput, Mockito.atLeastOnce()).onDone(done.capture());
+		final ArgumentCaptor<Runnable> closed = ArgumentCaptor.forClass(Runnable.class);
+		Mockito.verify(tabRenameInput, Mockito.atLeastOnce()).onClose(closed.capture());
+
+		done.getValue().accept(newName);
+		closed.getValue().run();
 	}
 
 	private static Point rectCentre(Rectangle r)

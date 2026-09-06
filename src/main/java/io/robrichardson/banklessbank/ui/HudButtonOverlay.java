@@ -49,6 +49,22 @@ public class HudButtonOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
+		// OverlayManager's draw-order comparator (OVERLAY_COMPARATOR) sorts by position group before
+		// priority, and a DYNAMIC overlay's group always sorts - and so draws - ahead of any
+		// snap-corner position group, regardless of either overlay's priority. BankOverlay is
+		// DYNAMIC and this overlay is a snap-corner position (BOTTOM_LEFT, movable/snappable), so no
+		// setPriority value can make the bank draw after us: RuneLite always draws us last, on top,
+		// once we land in the same screen area. BankOverlay renders earlier in the same frame (that
+		// same ordering), so by the time we get here the listener holds this frame's bank state, not
+		// last frame's - fall back to not drawing at all rather than paint over the bank's content.
+		final Rectangle bounds = getBounds();
+		final Rectangle hudRect = new Rectangle(bounds.x, bounds.y, SIZE, SIZE);
+		if (listener.isBankOpen() && listener.getBankBounds().intersects(hudRect))
+		{
+			listener.publishHud(false, null);
+			return null;
+		}
+
 		graphics.setColor(PANEL);
 		graphics.fillRoundRect(0, 0, SIZE, SIZE, 6, 6);
 		graphics.setColor(BORDER);
@@ -71,8 +87,7 @@ public class HudButtonOverlay extends Overlay
 			graphics.fillRoundRect(0, 0, SIZE, SIZE, 6, 6);
 		}
 
-		final Rectangle bounds = getBounds();
-		listener.publishHud(true, new Rectangle(bounds.x, bounds.y, SIZE, SIZE));
+		listener.publishHud(true, hudRect);
 
 		return DIMENSION;
 	}

@@ -184,3 +184,29 @@ No dependence on being near a bank in game.
 
 **Placeholders.** On by default, global toggle, per-slot release via right-click, per-tab
 "release all". See section 4.
+
+## 6. RuneLite cloud sync and export/import (2026-09-06)
+
+`ConfigManager` writes two scopes, each its own `.properties` file: the **active profile**
+(gated on that profile's own sync toggle) and the internal `$rsprofile` profile, which
+`ConfigManager` forces `sync = true` on unconditionally (`ConfigManager.java:366`, `:548`). So
+any RS-profile-scoped key syncs for everyone signed into a RuneLite account, with no toggle to
+forget. Our layout, placeholder ignore list, and every tracked storage key ride `$rsprofile`, so
+they already sync automatically once signed in. Only the six `view*` keys and the
+`@ConfigItem` settings live in the active-profile scope, because that is where every RuneLite
+plugin keeps UI preferences; they sync only if that profile's own sync toggle is on. Server
+limits (last open-source `ConfigService`, before commit `055f5c2d2`): 256 KiB per value, 8
+levels of JSON nesting, no `:` or leading `$`/`_` in a key. Our layout JSON is ~6 KB and 5 levels
+deep, comfortably inside both; `LayoutStoreTest#layoutStaysWithinSyncLimits` guards against a
+future field silently breaking this. A per-key server rejection produces no client-side signal
+at all (`ConfigPatchResult.getFailures()` is only logged on a non-200 HTTP status), which is the
+general mechanism behind "some plugin data doesn't sync" for other plugins.
+
+**Export/import** (`bootstrap/DataExporter`, wired into `BanklessBankPanel`) exists for the
+signed-out case: every `banklessbank` key in both scopes, plus export date and character name,
+as one JSON document (schema-versioned). Import always replaces the *currently logged-in*
+character's data, never the one recorded in the file — that's what makes moving between
+machines and accounts work. See `BanklessBankPanel` for the file-chooser flow and
+`BankViewController.reloadFromConfig()` / `BanklessBankPlugin.reloadAfterImport()` for how the
+in-memory state is re-read afterwards without a stale layout or storage `lastSaveString`
+clobbering what was just imported.

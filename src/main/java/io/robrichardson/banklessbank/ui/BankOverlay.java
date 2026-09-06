@@ -14,6 +14,7 @@ import java.awt.Rectangle;
 import java.awt.Shape;
 import java.awt.Stroke;
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -29,8 +30,7 @@ import net.runelite.client.ui.JagexColors;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
-import net.runelite.client.ui.overlay.tooltip.Tooltip;
-import net.runelite.client.ui.overlay.tooltip.TooltipManager;
+import net.runelite.client.util.QuantityFormatter;
 
 /**
  * Draws the bank view. Self-positioned: a {@code DYNAMIC} overlay with no preferred location is
@@ -67,16 +67,33 @@ public class BankOverlay extends Overlay
 	private static final Color ICON = new Color(0xC8, 0xC2, 0xB0);
 	private static final Color SCROLL_TRACK = new Color(0x25, 0x20, 0x19);
 	private static final Color SCROLL_THUMB = new Color(0x6E, 0x6B, 0x5F);
-	private static final Color MENU_BG = new Color(0x5D, 0x5D, 0x5D);
-	private static final Color MENU_BORDER = new Color(0x2E, 0x2E, 0x2E);
-	private static final Color MENU_HILIGHT = new Color(0x8A, 0x8A, 0x8A);
+	// The game's own "Choose Option" menu, matched exactly: a tan frame whose colour is reused for
+	// the header text, a black body, a grey hover bar, white options and orange targets. RuneLite
+	// only publishes the last of these (JagexColors.MENU_TARGET) - the client draws the rest
+	// natively, so the others are transcribed from it.
+	private static final Color MENU_FRAME = new Color(0x5D, 0x54, 0x47);
+	private static final Color MENU_BG = Color.BLACK;
+	private static final Color MENU_HILIGHT = new Color(0x80, 0x80, 0x80);
+	private static final Color MENU_TEXT = Color.WHITE;
+	private static final Color MENU_SHADOW = Color.BLACK;
 	private static final Color CARET = new Color(0xFF, 0xFF, 0x00);
 	private static final Color DROP_TAB = new Color(0xFF, 0xFF, 0x00, 90);
+	private static final Color TAB_REORDER_MARKER = Color.WHITE;
 
 	private static final Rectangle EMPTY = new Rectangle();
 
 	/** Spacing of the decorative rivets along the top and bottom of the frame. */
 	private static final int RIVET_PITCH = 14;
+
+	// Self-drawn tooltip geometry, mirroring RuneLite's own tooltip placement (see the class doc on
+	// drawTooltip for why we no longer route through TooltipManager).
+	private static final int TOOLTIP_CURSOR_DX = 10;
+	private static final int TOOLTIP_CURSOR_DY = 18;
+	private static final int TOOLTIP_PAD_X = 4;
+	private static final int TOOLTIP_PAD_Y = 3;
+	private static final int TOOLTIP_LINE_GAP = 2;
+	private static final Color TOOLTIP_BG = new Color(0x00, 0x00, 0x00, 0xC0);
+	private static final Color TOOLTIP_BORDER = new Color(0x5F, 0x54, 0x3F);
 
 	private final Client client;
 	private final ItemManager itemManager;
@@ -84,15 +101,13 @@ public class BankOverlay extends Overlay
 	private final BanklessBankConfig config;
 	private final BankViewController controller;
 	private final BankInputListener listener;
-	private final TooltipManager tooltipManager;
 
 	/** Client-thread only. Sprite id -> image, populated the first frame the cache can serve it. */
 	private final Map<Integer, BufferedImage> spriteCache = new HashMap<>();
 
 	@Inject
 	BankOverlay(Client client, ItemManager itemManager, SpriteManager spriteManager,
-		BanklessBankConfig config, BankViewController controller, BankInputListener listener,
-		TooltipManager tooltipManager)
+		BanklessBankConfig config, BankViewController controller, BankInputListener listener)
 	{
 		this.client = client;
 		this.itemManager = itemManager;
@@ -100,7 +115,6 @@ public class BankOverlay extends Overlay
 		this.config = config;
 		this.controller = controller;
 		this.listener = listener;
-		this.tooltipManager = tooltipManager;
 
 		setPosition(OverlayPosition.DYNAMIC);
 		setLayer(OverlayLayer.ABOVE_WIDGETS);
@@ -128,7 +142,7 @@ public class BankOverlay extends Overlay
 
 		if (!controller.isOpen())
 		{
-			listener.publish(false, EMPTY, false);
+			listener.publish(false, EMPTY, false, false);
 			return null;
 		}
 
@@ -149,17 +163,26 @@ public class BankOverlay extends Overlay
 
 		drawPanel(graphics, size);
 		drawGrid(graphics, model, local);
-		drawScrollbar(graphics, model, local);
+		if (model.isVScrollbarVisible())
+		{
+			drawScrollbar(graphics, model, local);
+		}
+		if (model.isHScrollbarVisible())
+		{
+			drawHScrollbar(graphics, model, local);
+		}
 		drawTabs(graphics, model, local);
 		drawBottomBar(graphics, model, local);
 		drawFrame(graphics, size);
+		drawResizeGrip(graphics, model, local);
 		drawTitle(graphics, model, local);
 		drawDrag(graphics, model, local);
 		drawMenu(graphics, model, local);
-		maybeTooltip(model, local);
+		drawTooltip(graphics, model, local);
 
 		listener.publish(true, new Rectangle(origin.x, origin.y, size.width, size.height),
-			client.isKeyPressed(KeyCode.KC_ALT));
+			client.isKeyPressed(KeyCode.KC_ALT), model.isMenuOpen());
+		controller.publishSearchFocused(model.isSearchFocused());
 
 		return size;
 	}
@@ -369,6 +392,31 @@ public class BankOverlay extends Overlay
 		graphics.drawLine(x, y + 2, x + 2, y + 2);
 	}
 
+	/**
+	 * Self-drawn bottom-right resize grip: three diagonal hatch lines, the same shape a resizable
+	 * desktop window uses. Drawn on top of the frame corner. Resizes both axes, in whole columns
+	 * and whole rows.
+	 */
+	private void drawResizeGrip(Graphics2D graphics, BankViewModel model, Point local)
+	{
+		final Rectangle r = model.resizeGripRect();
+		final boolean hovered = local != null && r.contains(local.x, local.y);
+
+		for (int d : new int[]{3, 7, 11})
+		{
+			final int x1 = r.x + r.width - 2;
+			final int y1 = r.y + r.height - 2 - d;
+			final int x2 = r.x + r.width - 2 - d;
+			final int y2 = r.y + r.height - 2;
+
+			graphics.setColor(FRAME_DARK);
+			graphics.drawLine(x1 + 1, y1 + 1, x2 + 1, y2 + 1);
+
+			graphics.setColor(hovered ? new Color(255, 255, 255, 140) : RIVET);
+			graphics.drawLine(x1, y1, x2, y2);
+		}
+	}
+
 	/** A raised stone button, the shape the bank's bottom-bar buttons use. */
 	private void drawStoneButton(Graphics2D graphics, Rectangle r, boolean pressed, boolean hovered)
 	{
@@ -393,17 +441,33 @@ public class BankOverlay extends Overlay
 
 		graphics.setFont(FontManager.getRunescapeBoldFont());
 		FontMetrics fm = graphics.getFontMetrics();
-		final String name = "Bankless Bank";
+		final String name = titleText(model);
 		graphics.setColor(TITLE);
 		graphics.drawString(name, title.x + (title.width - fm.stringWidth(name)) / 2,
 			baseline(fm, title.y, title.height));
 
-		// The real bank puts "used / capacity" here. A viewer has no capacity, so it is a plain count.
+		// The real bank puts "used / capacity" stacked top-left. A viewer has no capacity, so line 1
+		// is a plain count of owned items across every tab; line 2, dim, is the placeholder total,
+		// shown only when non-zero so a fully-owned layout keeps the single-line look.
 		graphics.setFont(FontManager.getRunescapeSmallFont());
-		fm = graphics.getFontMetrics();
-		graphics.setColor(COUNT);
-		graphics.drawString(model.getItemCount() + " items", title.x + 3,
-			baseline(fm, title.y, title.height));
+		final FontMetrics small = graphics.getFontMetrics();
+		final int totalText = model.getTotalItemCount();
+		final int placeholderTotal = model.getTotalPlaceholderCount();
+
+		if (placeholderTotal > 0)
+		{
+			final int lineH = small.getHeight();
+			final int top = title.y + (title.height - lineH * 2) / 2 + small.getAscent();
+			graphics.setColor(COUNT);
+			graphics.drawString(String.valueOf(totalText), title.x + 3, top);
+			graphics.setColor(TEXT_DIM);
+			graphics.drawString(String.valueOf(placeholderTotal), title.x + 3, top + lineH);
+		}
+		else
+		{
+			graphics.setColor(COUNT);
+			graphics.drawString(String.valueOf(totalText), title.x + 3, baseline(small, title.y, title.height));
+		}
 
 		drawCloseButton(graphics, model, local);
 
@@ -414,6 +478,25 @@ public class BankOverlay extends Overlay
 		graphics.setColor(FRAME_LIGHT);
 		graphics.drawLine(title.x, title.y + title.height, title.x + title.width - 1,
 			title.y + title.height);
+	}
+
+	/**
+	 * The title bar's centred text: the tab name (or "Bankless Bank" for the All tab / by-storage
+	 * view), with the GE value of what it shows appended in parentheses, shortened the way
+	 * {@code BankPlugin.createValueText} shortens the real bank's - "Tab 7 (905K)". Omitted when the
+	 * value is zero or the config item is off.
+	 */
+	private String titleText(BankViewModel model)
+	{
+		final String base = model.titleBaseName();
+
+		if (!config.showValue())
+		{
+			return base;
+		}
+
+		final long value = model.titleValue();
+		return value == 0 ? base : base + " (" + QuantityFormatter.quantityToStackSize(value) + ")";
 	}
 
 	private void drawCloseButton(Graphics2D graphics, BankViewModel model, Point local)
@@ -464,12 +547,15 @@ public class BankOverlay extends Overlay
 				final int iconId = model.getTabIconItemId(i - 1);
 				if (iconId > 0)
 				{
-					final Shape oldClip = graphics.getClip();
-					graphics.clipRect(r.x + 1, r.y + 1, r.width - 2, r.height - 2);
-					drawSprite(graphics, iconId, 1, false,
-						r.x + (r.width - BankGeometry.ITEM_SPRITE_W) / 2,
-						r.y + (r.height - BankGeometry.ITEM_SPRITE_H) / 2, 1f);
-					graphics.setClip(oldClip);
+					// Unscaled at its natural 36x32 whenever the tab is its full BankGeometry.TAB_W
+					// wide; drawFitted only scales when a narrow window has shrunk the strip's buttons
+					// below the sprite, which is the one case an icon would otherwise bleed into its
+					// neighbour.
+					final BufferedImage icon = itemManager.getImage(iconId, 1, false);
+					if (icon != null)
+					{
+						drawFitted(graphics, icon, r);
+					}
 				}
 				else
 				{
@@ -487,6 +573,13 @@ public class BankOverlay extends Overlay
 				graphics.setColor(DROP_TAB);
 				graphics.fillRect(r.x, r.y, r.width, r.height);
 			}
+		}
+
+		if (model.isTabDragging() && model.getTabDropIndex() >= 0)
+		{
+			final Rectangle marker = model.tabRect(model.getTabDropIndex() + 1);
+			graphics.setColor(TAB_REORDER_MARKER);
+			graphics.fillRect(marker.x, marker.y, 2, marker.height);
 		}
 	}
 
@@ -551,17 +644,11 @@ public class BankOverlay extends Overlay
 	/** The strip index the current drag would drop onto, or -1. */
 	private int dropTabIndex(BankViewModel model, Point local)
 	{
-		if (!model.isDragging() || local == null)
+		if (local == null)
 		{
 			return -1;
 		}
-
-		final Hit hit = model.hitTest(local.x, local.y);
-		if (hit.getType() == Hit.Type.TAB || hit.getType() == Hit.Type.TAB_PLUS)
-		{
-			return hit.getIndex();
-		}
-		return -1;
+		return model.dropTabStripIndex(local.x, local.y);
 	}
 
 	// ---- grid ------------------------------------------------------------------------------
@@ -617,15 +704,40 @@ public class BankOverlay extends Overlay
 		graphics.setColor(PANEL_DARK);
 		graphics.fillRect(grid.x, y, grid.width, row.getHeight());
 
+		// An All-view tab divider carries an icon and reserves a left margin for it; a BY_STORAGE
+		// header (headerIconItemId -1) starts its text flush left, as before.
+		final boolean hasIcon = row.getHeaderIconItemId() > 0;
+		final int textX = grid.x + (hasIcon ? BankGeometry.DIVIDER_ICON_W : 3);
+
+		if (hasIcon)
+		{
+			final BufferedImage icon = itemManager.getImage(row.getHeaderIconItemId(), 1, false);
+			if (icon != null)
+			{
+				drawFitted(graphics, icon,
+					new Rectangle(grid.x + 2, y + 2, BankGeometry.DIVIDER_ICON_W - 4, row.getHeight() - 4));
+			}
+		}
+
 		final String name = row.getHeaderText() == null ? "" : row.getHeaderText();
 		graphics.setColor(TITLE);
-		graphics.drawString(name, grid.x + 3, baseline);
+		graphics.drawString(name, textX, baseline);
 
 		final String subtitle = row.getHeaderSubtitle();
+		int labelEndX = textX + fm.stringWidth(name);
 		if (subtitle != null && !subtitle.isEmpty())
 		{
 			graphics.setColor(TEXT_DIM);
-			graphics.drawString(subtitle, grid.x + 9 + fm.stringWidth(name), baseline);
+			graphics.drawString(subtitle, labelEndX + 6, baseline);
+			labelEndX += 6 + fm.stringWidth(subtitle);
+		}
+
+		// The divider's separator line, echoing the real bank's engraved group boundary.
+		if (hasIcon)
+		{
+			graphics.setColor(FRAME_DARK);
+			final int lineY = y + row.getHeight() / 2;
+			graphics.drawLine(labelEndX + 6, lineY, grid.x + grid.width - 4, lineY);
 		}
 	}
 
@@ -641,6 +753,11 @@ public class BankOverlay extends Overlay
 		{
 			graphics.setColor(HOVER);
 			graphics.fillRect(r.x, r.y, r.width, r.height);
+		}
+
+		if (slot.isEmpty())
+		{
+			return;
 		}
 
 		if (model.isDragging() && model.getDragSlot() != null
@@ -691,6 +808,13 @@ public class BankOverlay extends Overlay
 
 	// ---- scrollbar -------------------------------------------------------------------------
 
+	/**
+	 * The grid's vertical scrollbar column. Unlike the geometry's rect, which is a fixed part of the
+	 * grid layout, drawing it is conditional: the caller only invokes this while
+	 * {@link BankViewModel#isVScrollbarVisible()}, i.e. the active tab/mode/search has content taller
+	 * than the viewport. Grid slot rects never move when it is hidden - the column simply goes
+	 * unpainted, so a short tab's right edge is clean instead of showing an empty track.
+	 */
 	private void drawScrollbar(Graphics2D graphics, BankViewModel model, Point local)
 	{
 		final Rectangle track = model.scrollTrackRect();
@@ -711,12 +835,61 @@ public class BankOverlay extends Overlay
 		drawScrollArrow(graphics, model.scrollUpRect(), true, local);
 		drawScrollArrow(graphics, model.scrollDownRect(), false, local);
 
-		if (model.getMaxScroll() <= 0)
+		drawScrollThumb(graphics, model.scrollThumbRect());
+	}
+
+	/**
+	 * The grid's horizontal scrollbar. Unlike the vertical bar, which always occupies its own column,
+	 * this one is not reserved space: the caller only invokes this while
+	 * {@link BankViewModel#isHScrollbarVisible()}, i.e. the active tab is laid out wider than the
+	 * viewport, and it draws overlaying the bottom 16px of the grid area (the last grid row is
+	 * partially covered, which is fine).
+	 */
+	private void drawHScrollbar(Graphics2D graphics, BankViewModel model, Point local)
+	{
+		final Rectangle track = model.hScrollTrackRect();
+
+		graphics.setColor(SCROLL_TRACK);
+		graphics.fillRect(track.x, track.y, track.width, track.height);
+		graphics.setColor(FRAME_DARK);
+		graphics.drawRect(track.x, track.y, Math.max(0, track.width - 1), track.height - 1);
+
+		drawHScrollArrow(graphics, model.hScrollLeftRect(), true, local);
+		drawHScrollArrow(graphics, model.hScrollRightRect(), false, local);
+
+		final Rectangle thumb = model.hScrollThumbRect();
+		graphics.setColor(SCROLL_THUMB);
+		graphics.fillRect(thumb.x, thumb.y, thumb.width, thumb.height);
+		graphics.setColor(STONE_LIGHT);
+		graphics.drawLine(thumb.x, thumb.y, thumb.x + thumb.width - 2, thumb.y);
+		graphics.drawLine(thumb.x, thumb.y, thumb.x, thumb.y + thumb.height - 2);
+		graphics.setColor(FRAME_DARK);
+		graphics.drawLine(thumb.x + thumb.width - 1, thumb.y, thumb.x + thumb.width - 1,
+			thumb.y + thumb.height - 1);
+		graphics.drawLine(thumb.x, thumb.y + thumb.height - 1, thumb.x + thumb.width - 1,
+			thumb.y + thumb.height - 1);
+	}
+
+	private void drawHScrollArrow(Graphics2D graphics, Rectangle r, boolean left, Point local)
+	{
+		final BufferedImage image = sprite(left
+			? SpriteID.ScrollbarV2.ARROW_LEFT : SpriteID.ScrollbarV2.ARROW_RIGHT);
+		if (image != null)
 		{
+			drawFitted(graphics, image, r);
 			return;
 		}
 
-		drawScrollThumb(graphics, model.scrollThumbRect());
+		final boolean hovered = local != null && r.contains(local.x, local.y);
+		drawStoneButton(graphics, r, false, hovered);
+
+		final int cy = r.y + r.height / 2;
+		final int near = r.x + 5;
+		final int far = r.x + r.width - 5;
+		final int[] ys = {cy - 4, cy + 4, cy};
+		final int[] xs = left ? new int[]{far, far, near} : new int[]{near, near, far};
+		graphics.setColor(new Color(0x1E, 0x1B, 0x14));
+		graphics.fillPolygon(xs, ys, 3);
 	}
 
 	private void drawScrollArrow(Graphics2D graphics, Rectangle r, boolean up, Point local)
@@ -787,6 +960,7 @@ public class BankOverlay extends Overlay
 
 		drawSearchButton(graphics, model, local);
 		drawSearchField(graphics, model);
+		drawAddButton(graphics, model, local);
 		drawModeButton(graphics, model, local);
 	}
 
@@ -844,6 +1018,20 @@ public class BankOverlay extends Overlay
 		}
 	}
 
+	/**
+	 * The "add an item" button: opens the game's own chatbox item search, whose pick is appended to
+	 * the tab on show as a placeholder. Wears the bank's [+] tab glyph, the closest thing the cache
+	 * has to an "add" icon.
+	 */
+	private void drawAddButton(Graphics2D graphics, BankViewModel model, Point local)
+	{
+		final Rectangle r = model.addButtonRect();
+		final boolean hovered = local != null && r.contains(local.x, local.y);
+
+		drawStoneButton(graphics, r, controller.isChatboxInputOpen(), hovered);
+		drawPlusTabIcon(graphics, r);
+	}
+
 	private void drawModeButton(Graphics2D graphics, BankViewModel model, Point local)
 	{
 		final Rectangle r = model.modeButtonRect();
@@ -864,17 +1052,14 @@ public class BankOverlay extends Overlay
 			return;
 		}
 
-		final int caret = model.getDropCaretIndex();
-		if (caret >= 0)
+		final int dropIndex = model.getDropSlotIndex();
+		if (dropIndex >= 0)
 		{
-			final Rectangle r = model.slotRect(caret);
+			final Rectangle r = model.slotRect(dropIndex);
 			if (r.width > 0)
 			{
-				final Stroke old = graphics.getStroke();
-				graphics.setStroke(new BasicStroke(2f));
-				graphics.setColor(CARET);
-				graphics.drawLine(r.x, r.y, r.x, r.y + r.height);
-				graphics.setStroke(old);
+				graphics.setColor(new Color(CARET.getRed(), CARET.getGreen(), CARET.getBlue(), 90));
+				graphics.fillRect(r.x, r.y, r.width, r.height);
 			}
 		}
 
@@ -905,14 +1090,25 @@ public class BankOverlay extends Overlay
 		}
 
 		final Rectangle r = menu.getBounds();
-		graphics.setColor(MENU_BG);
+		// Frame first, then the header band and the body punched out of it in black, exactly as the
+		// client lays it out: 1px of frame all round, a 16px black header, and the frame showing
+		// through as the 1px rule between header and body.
+		graphics.setColor(MENU_FRAME);
 		graphics.fillRect(r.x, r.y, r.width, r.height);
-		graphics.setColor(MENU_BORDER);
-		graphics.drawRect(r.x, r.y, r.width - 1, r.height - 1);
+		graphics.setColor(MENU_BG);
+		graphics.fillRect(r.x + 1, r.y + 1, r.width - 2, BankGeometry.MENU_HEADER_H - 2);
+		graphics.fillRect(r.x + 1, r.y + BankGeometry.MENU_HEADER_H,
+			r.width - 2, r.height - BankGeometry.MENU_HEADER_H - 1);
 
 		final Font old = graphics.getFont();
-		graphics.setFont(FontManager.getRunescapeSmallFont());
+		graphics.setFont(FontManager.getRunescapeFont());
 		final FontMetrics fm = graphics.getFontMetrics();
+
+		// The header title is drawn in the frame's own colour, as the game does.
+		final Rectangle header = menu.headerRect();
+		graphics.setColor(MENU_FRAME);
+		graphics.drawString(ContextMenu.TITLE, header.x + BankGeometry.MENU_TEXT_X - 1,
+			baseline(fm, header.y, header.height));
 
 		final List<ContextMenuEntry> entries = menu.getEntries();
 		for (int i = 0; i < entries.size(); i++)
@@ -929,29 +1125,145 @@ public class BankOverlay extends Overlay
 				graphics.fillRect(er.x, er.y, er.width, er.height);
 			}
 
-			graphics.setColor(Color.WHITE);
-			graphics.drawString(entries.get(i).getLabel(), er.x + 4, baseline(fm, er.y, er.height));
+			final ContextMenuEntry entry = entries.get(i);
+			final int tx = er.x + BankGeometry.MENU_TEXT_X - 1;
+			final int by = baseline(fm, er.y, er.height);
+			drawShadowed(graphics, entry.getLabel(), tx, by, MENU_TEXT);
+			if (entry.hasTarget())
+			{
+				drawShadowed(graphics, entry.getTarget(),
+					tx + fm.stringWidth(entry.getLabel() + " "), by, JagexColors.MENU_TARGET);
+			}
 		}
 
 		graphics.setFont(old);
 	}
 
+	/** One string with the game's 1px black drop shadow under it. */
+	private void drawShadowed(Graphics2D graphics, String text, int x, int y, Color colour)
+	{
+		graphics.setColor(MENU_SHADOW);
+		graphics.drawString(text, x + 1, y + 1);
+		graphics.setColor(colour);
+		graphics.drawString(text, x, y);
+	}
+
 	// ---- tooltip ---------------------------------------------------------------------------
 
-	private void maybeTooltip(BankViewModel model, Point local)
+	/**
+	 * Draws our own tooltip at the tracked cursor position, rather than handing text to RuneLite's
+	 * {@code TooltipManager}. That manager anchors at {@code client.getMouseCanvasPosition()}, which
+	 * only advances on a mouse-moved event that reaches the injected client - and we consume every
+	 * such event while the cursor is inside our bounds (registered ahead of the client's own
+	 * handler), so the game's notion of the mouse position freezes the instant the cursor enters the
+	 * window. Consuming the move is required (it is what stops the game highlighting scenery under
+	 * the window), so the tooltip has to be self-drawn instead. Painted last, over everything else.
+	 */
+	private void drawTooltip(Graphics2D graphics, BankViewModel model, Point local)
 	{
 		if (local == null || model.isDragging() || model.isMenuOpen())
 		{
 			return;
 		}
 
-		final List<String> lines = model.tooltipLines(local.x, local.y);
+		final List<String> lines = tooltipLinesWithPrice(model, local);
 		if (lines.isEmpty())
 		{
 			return;
 		}
 
-		tooltipManager.add(new Tooltip(String.join("</br>", lines)));
+		graphics.setFont(FontManager.getRunescapeFont());
+		final FontMetrics fm = graphics.getFontMetrics();
+		final int lineH = fm.getHeight();
+
+		int maxWidth = 0;
+		for (String line : lines)
+		{
+			maxWidth = Math.max(maxWidth, fm.stringWidth(line));
+		}
+
+		final int w = TOOLTIP_PAD_X * 2 + maxWidth;
+		final int h = TOOLTIP_PAD_Y * 2 + lines.size() * lineH + (lines.size() - 1) * TOOLTIP_LINE_GAP;
+
+		final Point origin = controller.getPosition();
+		final int canvasW = client.getCanvasWidth();
+		final int canvasH = client.getCanvasHeight();
+
+		int x = local.x + TOOLTIP_CURSOR_DX;
+		x = Math.min(x, canvasW - origin.x - w);
+		x = Math.max(x, -origin.x);
+
+		int y = local.y + TOOLTIP_CURSOR_DY;
+		final int clampedY = Math.min(y, canvasH - origin.y - h);
+		if (y - clampedY > TOOLTIP_CURSOR_DY)
+		{
+			// The downward clamp would have pushed the tooltip up by more than one cursor offset;
+			// flip it above the cursor instead of letting it ride the canvas edge next to the pointer.
+			y = local.y - TOOLTIP_CURSOR_DY / 2 - h;
+		}
+		else
+		{
+			y = clampedY;
+		}
+		y = Math.max(y, -origin.y);
+
+		graphics.setColor(TOOLTIP_BG);
+		graphics.fillRect(x, y, w, h);
+		graphics.setColor(TOOLTIP_BORDER);
+		graphics.drawRect(x, y, w - 1, h - 1);
+
+		int lineY = y + TOOLTIP_PAD_Y + fm.getAscent();
+		for (int i = 0; i < lines.size(); i++)
+		{
+			graphics.setColor(i == 0 ? JagexColors.DARK_ORANGE_INTERFACE_TEXT : TEXT_DIM);
+			graphics.drawString(lines.get(i), x + TOOLTIP_PAD_X, lineY);
+			lineY += lineH + TOOLTIP_LINE_GAP;
+		}
+	}
+
+	/**
+	 * {@link BankViewModel#tooltipLines} stays free of formatting (a pure-tier method cannot reach
+	 * {@code QuantityFormatter}), so for a slot this inserts the GE price line - or "Placeholder" -
+	 * right after the item name here, where the formatter is available.
+	 */
+	private List<String> tooltipLinesWithPrice(BankViewModel model, Point local)
+	{
+		final List<String> base = model.tooltipLines(local.x, local.y);
+		if (base.isEmpty())
+		{
+			return base;
+		}
+
+		final BankSlot slot = model.slotAt(local.x, local.y);
+		if (slot == null)
+		{
+			return base;
+		}
+
+		final List<String> lines = new ArrayList<>();
+		lines.add(base.get(0));
+
+		if (slot.isPlaceholder())
+		{
+			lines.add("Placeholder");
+		}
+		else
+		{
+			final int price = model.unitPrice(slot.getCanonicalId());
+			if (price > 0)
+			{
+				final long qty = slot.getQuantity();
+				String geLine = "GE: " + QuantityFormatter.formatNumber(qty * price);
+				if (qty > 1)
+				{
+					geLine += " (" + QuantityFormatter.formatNumber(price) + " ea)";
+				}
+				lines.add(geLine);
+			}
+		}
+
+		lines.addAll(base.subList(1, base.size()));
+		return lines;
 	}
 
 	private void drawCentredText(Graphics2D graphics, Font font, String text, Rectangle r, Color color)

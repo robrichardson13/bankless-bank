@@ -25,8 +25,18 @@ public final class BankRow
 	private final String headerText;
 	private final String headerSubtitle;
 	private final List<BankSlot> slots;
+	/** The tab this row belongs to in TABS mode, or -1 for BY_STORAGE and search rows. */
+	private final int tabIndex;
+	/** The tab's icon item id for a header row in the All view, or -1. */
+	private final int headerIconItemId;
 
 	public BankRow(Kind kind, int y, int height, String headerText, String headerSubtitle, List<BankSlot> slots)
+	{
+		this(kind, y, height, headerText, headerSubtitle, slots, -1, -1);
+	}
+
+	public BankRow(Kind kind, int y, int height, String headerText, String headerSubtitle, List<BankSlot> slots,
+		int tabIndex, int headerIconItemId)
 	{
 		this.kind = kind;
 		this.y = y;
@@ -34,5 +44,7 @@ public final class BankRow
 		this.headerText = headerText;
 		this.headerSubtitle = headerSubtitle;
 		this.slots = Collections.unmodifiableList(new ArrayList<>(slots));
+		this.tabIndex = tabIndex;
+		this.headerIconItemId = headerIconItemId;
 	}
 }

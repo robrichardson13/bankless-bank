@@ -6,10 +6,14 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import io.robrichardson.banklessbank.model.BankTab;
 import io.robrichardson.banklessbank.ui.BankGeometry;
 import io.robrichardson.banklessbank.ui.BankSlot;
+import io.robrichardson.banklessbank.ui.ContextMenu;
 import io.robrichardson.banklessbank.ui.ContextMenuEntry;
+import io.robrichardson.banklessbank.ui.MenuAction;
 import io.robrichardson.banklessbank.ui.ViewMode;
+import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Point;
 import java.awt.Rectangle;
@@ -19,8 +23,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Locale;
+import net.runelite.client.ui.JagexColors;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -40,11 +46,21 @@ public class OverlayScreenshotTest
 	}
 
 	private static final Path BUILD_DIR = Paths.get(System.getProperty("user.dir"), "build", "screenshots");
-	private static final Path SCRATCH_DIR = Paths.get(
-		"/private/tmp/claude-501/-Users-robrichardson--nib-repos-bankless-bank-init",
-		"dd570016-fe25-427e-9fb8-180db2859bee", "scratchpad", "screenshots");
 
-	private static final List<Path> OUT_DIRS = Arrays.asList(BUILD_DIR, SCRATCH_DIR);
+	/**
+	 * Where the frames are written. {@code build/screenshots} always, plus any extra directory named
+	 * by the {@code banklessbank.screenshotDir} system property - previously a session scratchpad
+	 * path was hardcoded here, which went stale the moment the session that wrote it ended.
+	 */
+	private static final List<Path> OUT_DIRS = outDirs();
+
+	private static List<Path> outDirs()
+	{
+		final String extra = System.getProperty("banklessbank.screenshotDir");
+		return extra == null || extra.isEmpty()
+			? Collections.singletonList(BUILD_DIR)
+			: Arrays.asList(BUILD_DIR, Paths.get(extra));
+	}
 
 	private static final List<String> WRITTEN = new ArrayList<>();
 
@@ -80,7 +96,7 @@ public class OverlayScreenshotTest
 		// ---- b. open on the [All] tab, scrolled to the top ---------------------------------
 		harness.openViaHudButton();
 		Dimension size = harness.render(2);
-		assertEquals(BankGeometry.size(BankGeometry.DEFAULT_ROWS), size);
+		assertEquals(BankGeometry.size(BankGeometry.DEFAULT_COLS, BankGeometry.DEFAULT_ROWS), size);
 		assertEquals(-1, harness.model().getActiveTab());
 		assertEquals(0, harness.model().getScroll());
 		assertTrue("more content than fits, so there is something to scroll",
@@ -92,6 +108,8 @@ public class OverlayScreenshotTest
 		assertTrue("the first slot must contain a drawn sprite, not just chrome",
 			harness.distinctColours(firstSlot) >= 5);
 
+		assertTrue("the vertical scrollbar must be visible when there is content to scroll",
+			harness.model().isVScrollbarVisible());
 		final Rectangle scrollbar = harness.rectOnCanvas(harness.model().scrollbarRect());
 		assertTrue("the scrollbar must be painted", harness.nonBackgroundPixels(scrollbar) > 0);
 		assertTrue("the scrollbar must show a thumb against its track",
@@ -119,7 +137,7 @@ public class OverlayScreenshotTest
 		harness.render();
 
 		assertTrue("the drag must be live before the frame is captured", harness.model().isDragging());
-		assertEquals(3, harness.model().getDropCaretIndex());
+		assertEquals(3, harness.model().getDropSlotIndex());
 		shoot(harness, "04-mid-drag-caret-and-ghost");
 
 		harness.release(to.x, to.y);
@@ -127,9 +145,9 @@ public class OverlayScreenshotTest
 		assertFalse(harness.model().isDragging());
 
 		final List<Integer> afterDrag = harness.layout().getMainTab().getSlots();
-		assertFalse("dropping onto another slot must reorder the tab", beforeDrag.equals(afterDrag));
-		assertEquals(beforeDrag.get(1), afterDrag.get(0));
-		assertEquals(beforeDrag.get(0), afterDrag.get(2));
+		assertFalse("dropping onto another slot must swap the two items", beforeDrag.equals(afterDrag));
+		assertEquals(beforeDrag.get(3), afterDrag.get(0));
+		assertEquals(beforeDrag.get(0), afterDrag.get(3));
 
 		// ---- h. right-click context menu on a placeholder slot ------------------------------
 		final Point placeholder = harness.centreOfSlot(0);
@@ -156,26 +174,39 @@ public class OverlayScreenshotTest
 		harness.render(2);
 		assertEquals(1, harness.model().getActiveTab());
 		assertEquals(FakeStorages.RUNE_PLATEBODY, harness.model().getTabIconItemId(1));
+		assertFalse("the gear tab's six items fit in one row, nothing to scroll vertically",
+			harness.model().isVScrollbarVisible());
+		final Rectangle noScrollbar = harness.rectOnCanvas(harness.model().scrollbarRect());
+		assertEquals("with nothing to scroll the bar's column shows no thumb/track colours, just panel steel",
+			1, harness.distinctColours(noScrollbar));
 		shoot(harness, "06-custom-tab-gear");
 
-		// ---- i. tooltip for an item held in two storages ------------------------------------
+		// ---- i. self-drawn tooltip for an item held in two storages -------------------------
+		// We no longer route through RuneLite's TooltipManager, whose anchor
+		// (client.getMouseCanvasPosition()) freezes the instant the cursor enters our bounds because
+		// we consume every mouseMoved event inside them. Instead BankOverlay draws its own tooltip
+		// at the position we track ourselves, so it must appear right next to the live cursor.
 		harness.clickTab(3);
 		harness.render(2);
 		assertEquals(2, harness.model().getActiveTab());
 
-		harness.clearTooltips();
 		final Point airRune = harness.centreOfSlot(0);
+		final Point origin = harness.origin();
 		harness.moveTo(airRune);
 		harness.render();
 
-		assertFalse("hovering a slot must produce a tooltip", harness.tooltips().isEmpty());
-		final String tooltip = harness.tooltips().get(0).getText();
-		final List<String> tooltipLines = Arrays.asList(tooltip.split("</br>"));
+		final List<String> tooltipLines = harness.model()
+			.tooltipLines(airRune.x - origin.x, airRune.y - origin.y);
+		assertFalse("hovering a slot must produce tooltip lines", tooltipLines.isEmpty());
 		assertEquals("Air rune", tooltipLines.get(0));
-		assertTrue("the tooltip breaks the total down per storage: " + tooltip,
+		assertTrue("the tooltip breaks the total down per storage: " + tooltipLines,
 			tooltipLines.contains("Inventory: 4000") && tooltipLines.contains("Rune pouch: 3000"));
 
-		harness.annotate("TooltipManager received:", tooltipLines);
+		final Rectangle tooltipArea = new Rectangle(airRune.x + 10, airRune.y + 18, 60, 20);
+		assertTrue("the self-drawn tooltip must be painted right next to the cursor",
+			harness.nonBackgroundPixels(tooltipArea) > 0);
+
+		harness.annotate("Self-drawn tooltip lines:", tooltipLines);
 		shoot(harness, "07-tooltip-multi-storage");
 
 		// ---- e. search, typed through the input listener ------------------------------------
@@ -221,7 +252,7 @@ public class OverlayScreenshotTest
 		harness.render(2);
 
 		// ---- j. scrolled to the bottom, thumb at the end ------------------------------------
-		final Point insideGrid = harness.canvas(BankGeometry.GRID_W / 2, BankGeometry.grid(6).y + 40);
+		final Point insideGrid = harness.canvas(harness.model().gridRect().width / 2, harness.model().gridRect().y + 40);
 		for (int i = 0; i < 30; i++)
 		{
 			harness.wheel(insideGrid.x, insideGrid.y, 1);
@@ -246,7 +277,7 @@ public class OverlayScreenshotTest
 		sprited.render();
 		sprited.openViaHudButton();
 		sprited.render(2);
-		assertEquals(BankGeometry.size(BankGeometry.DEFAULT_ROWS), sprited.lastRenderedSize());
+		assertEquals(BankGeometry.size(BankGeometry.DEFAULT_COLS, BankGeometry.DEFAULT_ROWS), sprited.lastRenderedSize());
 		shoot(sprited, "11-interface-sprites");
 
 		System.out.println("Bankless Bank render harness wrote:");
@@ -266,9 +297,9 @@ public class OverlayScreenshotTest
 		final BankHarness harness = openedHarness();
 		final Dimension size = harness.render();
 
-		assertEquals(BankGeometry.WIDTH, size.width);
+		assertEquals(BankGeometry.width(BankGeometry.DEFAULT_COLS), size.width);
 		assertEquals(BankGeometry.height(BankGeometry.DEFAULT_ROWS), size.height);
-		assertEquals(BankGeometry.size(BankGeometry.DEFAULT_ROWS), size);
+		assertEquals(BankGeometry.size(BankGeometry.DEFAULT_COLS, BankGeometry.DEFAULT_ROWS), size);
 	}
 
 	@Test
@@ -285,7 +316,7 @@ public class OverlayScreenshotTest
 	}
 
 	@Test
-	public void clickOutsideIsConsumedUnlessAltIsHeld()
+	public void clickOutsideBelongsToTheGameUnlessDismissingAnOpenMenu()
 	{
 		final BankHarness harness = openedHarness();
 		harness.render();
@@ -294,15 +325,271 @@ public class OverlayScreenshotTest
 		assertFalse("the test point must be outside the window",
 			new Rectangle(harness.origin(), harness.model().size()).contains(outside));
 
-		// Alt held: RuneLite's own alt-drag must keep working, so we stand aside.
+		// No menu open: every click outside the window belongs to the game.
+		assertFalse("an outside click with nothing to dismiss must pass through",
+			harness.press(outside.x, outside.y).isConsumed());
+		harness.release(outside.x, outside.y);
+		harness.render();
+
+		// Open a context menu, then confirm alt-held clicks still pass through regardless of menu
+		// state - RuneLite's own alt-drag must keep working no matter what we are doing.
+		final Point slot = harness.centreOfSlot(0);
+		harness.moveTo(slot);
+		harness.rightPress(slot.x, slot.y);
+		harness.render();
+		assertTrue(harness.model().isMenuOpen());
+
 		harness.setAltHeld(true);
 		harness.render();
-		assertFalse(harness.press(outside.x, outside.y).isConsumed());
-
-		// Alt released: the click is ours, to close any open context menu.
+		assertFalse("alt held must stand aside even with a menu open",
+			harness.press(outside.x, outside.y).isConsumed());
 		harness.setAltHeld(false);
 		harness.render();
+		assertTrue("a menu must still be open; the alt-held press must not have dismissed it",
+			harness.model().isMenuOpen());
+
+		// Alt released, menu open: the outside click dismisses the menu and is eaten, as any menu's
+		// outside click would be.
 		assertTrue(harness.press(outside.x, outside.y).isConsumed());
+		harness.render();
+		assertFalse(harness.model().isMenuOpen());
+	}
+
+	@Test
+	public void clickOutsideClearsSearchFocus()
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickSearchBox();
+		harness.render();
+		assertTrue(harness.model().isSearchFocused());
+
+		final Point outside = new Point(BankHarness.CANVAS_W - 10, 10);
+		harness.press(outside.x, outside.y);
+		harness.render();
+
+		assertFalse("clicking the world must clear search focus so typing goes back to the game",
+			harness.model().isSearchFocused());
+	}
+
+	@Test
+	public void typingOnlyFillsSearchWhenTheSearchBoxHasFocus()
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+		assertFalse(harness.model().isSearchFocused());
+
+		harness.type("abc");
+		harness.render();
+		assertEquals("typing without focus must not steal from the game (e.g. the chatbox)",
+			"", harness.model().getSearch());
+
+		harness.clickSearchBox();
+		harness.render();
+		harness.type("abc");
+		harness.render();
+		assertEquals("abc", harness.model().getSearch());
+	}
+
+	@Test
+	public void backspaceIsConsumedOnlyWhileSearchIsFocused()
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickSearchBox();
+		harness.render();
+		harness.type("abc");
+		harness.render();
+		assertEquals("abc", harness.model().getSearch());
+
+		harness.controller().post(() -> harness.model().setSearchFocused(false));
+		harness.render();
+		final KeyEvent unfocused = harness.keyPress(KeyEvent.VK_BACK_SPACE);
+		harness.render();
+		assertFalse(unfocused.isConsumed());
+		assertEquals("backspace while unfocused must do nothing", "abc", harness.model().getSearch());
+
+		harness.clickSearchBox();
+		harness.render();
+		final KeyEvent focused = harness.keyPress(KeyEvent.VK_BACK_SPACE);
+		harness.render();
+		assertTrue(focused.isConsumed());
+		assertEquals("ab", harness.model().getSearch());
+	}
+
+	@Test
+	public void escapeWithAnOpenMenuClosesTheMenuNotTheWindow()
+	{
+		final BankHarness harness = openedHarness();
+		final Point slot = harness.centreOfSlot(0);
+		harness.moveTo(slot);
+		harness.rightPress(slot.x, slot.y);
+		harness.render();
+		assertTrue(harness.model().isMenuOpen());
+
+		harness.keyPress(KeyEvent.VK_ESCAPE);
+		harness.render();
+
+		assertFalse(harness.model().isMenuOpen());
+		assertTrue("escape must close only the menu while one is open", harness.controller().isOpen());
+	}
+
+	@Test
+	public void escapeWithFocusedNonEmptySearchClearsTextButKeepsFocus()
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickSearchBox();
+		harness.render();
+		harness.type("rune");
+		harness.render();
+		assertEquals("rune", harness.model().getSearch());
+
+		harness.keyPress(KeyEvent.VK_ESCAPE);
+		harness.render();
+
+		assertEquals("", harness.model().getSearch());
+		assertTrue("escape clears the text first, keeping focus so typing can resume",
+			harness.model().isSearchFocused());
+		assertTrue(harness.controller().isOpen());
+	}
+
+	@Test
+	public void resizeGripDragChangesVisibleRowsInWholeRowsAndPersists() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+		assertEquals(BankGeometry.DEFAULT_ROWS, harness.model().getVisibleRows());
+
+		final Point grip = harness.gripCentre();
+		harness.moveTo(grip);
+		harness.press(grip.x, grip.y);
+		harness.render();
+
+		final int down3Rows = grip.y + BankGeometry.SLOT_H * 3;
+		harness.drag(grip.x, down3Rows);
+		harness.render();
+		shoot(harness, "13-resize-grip-drag");
+
+		assertEquals(BankGeometry.DEFAULT_ROWS + 3, harness.model().getVisibleRows());
+		assertEquals(BankGeometry.height(BankGeometry.DEFAULT_ROWS + 3), harness.lastRenderedSize().height);
+
+		harness.release(grip.x, down3Rows);
+		harness.render();
+
+		assertEquals(BankGeometry.DEFAULT_ROWS + 3, harness.model().getVisibleRows());
+	}
+
+	@Test
+	public void resizeGripDragClampsAtMinimumRows()
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+
+		final Point grip = harness.gripCentre();
+		harness.moveTo(grip);
+		harness.press(grip.x, grip.y);
+		harness.render();
+
+		final int wayUp = grip.y - BankGeometry.SLOT_H * 50;
+		harness.drag(grip.x, wayUp);
+		harness.render();
+
+		assertEquals(BankGeometry.MIN_ROWS, harness.model().getVisibleRows());
+
+		harness.release(grip.x, wayUp);
+		harness.render();
+		assertEquals(BankGeometry.MIN_ROWS, harness.model().getVisibleRows());
+	}
+
+	@Test
+	public void resizeGripDragChangesVisibleColumnsInWholeColumns() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+		assertEquals(BankGeometry.DEFAULT_COLS, harness.model().getVisibleCols());
+
+		final Point grip = harness.gripCentre();
+		harness.moveTo(grip);
+		harness.press(grip.x, grip.y);
+		harness.render();
+
+		final int right4Cols = grip.x + BankGeometry.SLOT_W * 4;
+		harness.drag(right4Cols, grip.y);
+		harness.render(2);
+
+		assertEquals(BankGeometry.DEFAULT_COLS + 4, harness.model().getVisibleCols());
+		assertEquals(BankGeometry.DEFAULT_ROWS, harness.model().getVisibleRows());
+		assertEquals(BankGeometry.width(12), harness.lastRenderedSize().width);
+		// The window is a viewport, so a 12-column window over an 8-wide tab draws all 12 cells of a
+		// row inside the grid - the last four of them blank, past the tab's own width.
+		for (int i = 0; i < 12; i++)
+		{
+			assertTrue("column " + i + " must be inside the widened grid",
+				harness.model().gridRect().contains(harness.model().slotRect(i)));
+		}
+		shoot(harness, "17-twelve-columns");
+
+		harness.release(right4Cols, grip.y);
+		harness.render();
+		assertEquals(BankGeometry.DEFAULT_COLS + 4, harness.model().getVisibleCols());
+	}
+
+	@Test
+	public void resizeGripDragClampsAtMinimumColumnsAndKeepsTheWholeTabStripOnScreen() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+
+		final Point grip = harness.gripCentre();
+		harness.moveTo(grip);
+		harness.press(grip.x, grip.y);
+		harness.render();
+
+		final int wayLeft = grip.x - BankGeometry.SLOT_W * 20;
+		harness.drag(wayLeft, grip.y);
+		harness.render(2);
+
+		assertEquals(BankGeometry.MIN_COLS, harness.model().getVisibleCols());
+		assertEquals(BankGeometry.width(BankGeometry.MIN_COLS), harness.lastRenderedSize().width);
+
+		// The strip shrinks its buttons rather than pushing any of them off the right edge, so every
+		// tab and the [+] stay clickable at the narrowest window.
+		final Rectangle strip = harness.model().geometry().tabStrip();
+		final int stripLength = harness.model().getStripLength();
+		assertTrue("a narrow window must shrink the tab buttons",
+			harness.model().tabWidth() < BankGeometry.TAB_W);
+		for (int i = 0; i < stripLength; i++)
+		{
+			assertTrue("strip entry " + i + " must stay inside the strip",
+				strip.contains(harness.model().tabRect(i)));
+		}
+		shoot(harness, "18-four-columns");
+
+		harness.release(wayLeft, grip.y);
+		harness.render();
+		assertEquals(BankGeometry.MIN_COLS, harness.model().getVisibleCols());
+	}
+
+	@Test
+	public void aResizeOnBothAxesPersistsItsColumnsAndRowsToConfig()
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+
+		final Point grip = harness.gripCentre();
+		harness.moveTo(grip);
+		harness.press(grip.x, grip.y);
+		harness.render();
+
+		final int x = grip.x + BankGeometry.SLOT_W * 2;
+		final int y = grip.y + BankGeometry.SLOT_H * 2;
+		harness.drag(x, y);
+		harness.render(2);
+		harness.release(x, y);
+		harness.render(2);
+
+		assertEquals(BankGeometry.DEFAULT_COLS + 2, harness.model().getVisibleCols());
+		assertEquals(BankGeometry.DEFAULT_ROWS + 2, harness.model().getVisibleRows());
+		assertEquals("10", harness.configValue("viewCols"));
+		assertEquals("8", harness.configValue("viewRows"));
 	}
 
 	@Test
@@ -311,7 +598,7 @@ public class OverlayScreenshotTest
 		final BankHarness harness = openedHarness();
 		harness.render();
 
-		final Point inside = harness.canvas(BankGeometry.GRID_W / 2, BankGeometry.grid(6).y + 40);
+		final Point inside = harness.canvas(harness.model().gridRect().width / 2, harness.model().gridRect().y + 40);
 
 		harness.wheel(inside.x, inside.y, 1);
 		harness.render();
@@ -333,7 +620,7 @@ public class OverlayScreenshotTest
 	}
 
 	@Test
-	public void dragFromSlotZeroToSlotThreeReordersTheLayout()
+	public void dragFromSlotZeroToSlotThreeSwapsTheTwoItems()
 	{
 		final BankHarness harness = openedHarness();
 		harness.render();
@@ -354,9 +641,594 @@ public class OverlayScreenshotTest
 
 		final List<Integer> after = harness.layout().getMainTab().getSlots();
 		assertEquals(before.size(), after.size());
-		assertEquals(before.get(1), after.get(0));
-		assertEquals(before.get(2), after.get(1));
-		assertEquals(before.get(0), after.get(2));
+		assertEquals(before.get(3), after.get(0));
+		assertEquals(before.get(0), after.get(3));
+		assertEquals(before.get(1), after.get(1));
+		assertEquals(before.get(2), after.get(2));
+	}
+
+	@Test
+	public void dragTabStripReordersCustomTabsWithADropIndicator() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+
+		assertEquals(Arrays.asList("Main", "Gear", "Runes", "Seeds"), tabNames(harness));
+
+		// Strip index 3 = layout tab 2 ("Runes"); strip index 4 = layout tab 3 ("Seeds").
+		final Point from = centreOnCanvas(harness, harness.model().tabRect(3));
+		final Point to = centreOnCanvas(harness, harness.model().tabRect(4));
+
+		harness.moveTo(from);
+		harness.press(from.x, from.y);
+		harness.render();
+		harness.drag(to.x, to.y);
+		harness.render();
+
+		assertTrue("a tab drag must be live before release", harness.model().isTabDragging());
+		assertEquals(3, harness.model().getTabDropIndex());
+		shoot(harness, "12-tab-reorder-in-progress");
+
+		harness.release(to.x, to.y);
+		harness.render();
+
+		assertFalse(harness.model().isTabDragging());
+		assertEquals(Arrays.asList("Main", "Gear", "Seeds", "Runes"), tabNames(harness));
+	}
+
+	@Test
+	public void dragMainTabToTheEndOfTheStripReordersItLikeAnyOtherTab() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+
+		assertEquals(Arrays.asList("Main", "Gear", "Runes", "Seeds"), tabNames(harness));
+
+		// Strip index 1 = Main; strip index 4 = layout tab 3 ("Seeds"), the last real tab.
+		final Point from = centreOnCanvas(harness, harness.model().tabRect(1));
+		final Point to = centreOnCanvas(harness, harness.model().tabRect(4));
+
+		harness.moveTo(from);
+		harness.press(from.x, from.y);
+		harness.render();
+		harness.drag(to.x, to.y);
+		harness.render();
+
+		assertTrue("a tab drag must be live before release", harness.model().isTabDragging());
+		assertEquals(0, harness.model().getTabDragFrom());
+		shoot(harness, "19-main-tab-drag-in-progress");
+
+		harness.release(to.x, to.y);
+		harness.render();
+
+		assertFalse(harness.model().isTabDragging());
+		assertEquals(Arrays.asList("Gear", "Runes", "Seeds", "Main"), tabNames(harness));
+		assertEquals(3, harness.layout().indexOfMainTab());
+		assertTrue("Main is still the one flagged main tab, just relocated",
+			harness.layout().getTab(3).isMain());
+	}
+
+	@Test
+	public void dragASearchResultOntoATabButtonMovesItThere() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+
+		// Strip: 0 = All, 1 = Main, 2 = Gear, 3 = Runes, 4 = Seeds.
+		harness.clickTab(3);
+		harness.render(2);
+
+		harness.clickSearchBox();
+		harness.render();
+		harness.type("rune");
+		harness.render(2);
+
+		assertFalse("the 'rune' search on the Runes tab must find something",
+			harness.model().getSlots().isEmpty());
+		final int itemId = harness.model().getSlots().get(0).getCanonicalId();
+		assertTrue("the dragged item must start out in the Runes tab", harness.layout().getTab(2).contains(itemId));
+
+		final Point from = harness.centreOfSlot(0);
+		final Point gearTab = centreOnCanvas(harness, harness.model().tabRect(2));
+
+		harness.moveTo(from);
+		harness.press(from.x, from.y);
+		harness.render();
+		harness.drag(gearTab.x, gearTab.y);
+		harness.render();
+
+		assertTrue("a drag from a search result must be live", harness.model().isDragging());
+		shoot(harness, "20-search-drag-to-tab");
+
+		harness.release(gearTab.x, gearTab.y);
+		harness.render(2);
+
+		assertFalse(harness.model().isDragging());
+		assertFalse("the item must have left the Runes tab", harness.layout().getTab(2).contains(itemId));
+		assertTrue("the item must now be in the Gear tab", harness.layout().getTab(1).contains(itemId));
+		assertEquals("rune", harness.model().getSearch());
+		for (BankSlot slot : harness.model().getSlots())
+		{
+			assertFalse("the moved item must have dropped out of the Runes-tab search results",
+				slot.getCanonicalId() == itemId);
+		}
+	}
+
+	@Test
+	public void setAsTabIconContextMenuEntryChangesTheIconWithoutMovingTheItem()
+	{
+		final BankHarness harness = openedHarness();
+		harness.render();
+		harness.clickTab(2); // "Gear", layout tab 1
+		harness.render(2);
+
+		assertEquals(FakeStorages.RUNE_PLATEBODY, harness.model().getTabIconItemId(1));
+
+		final int targetFlatIndex = 1;
+		final int targetItemId = harness.model().getSlots().get(targetFlatIndex).getCanonicalId();
+		assertTrue("the target slot must not already be the icon", targetItemId != FakeStorages.RUNE_PLATEBODY);
+		final List<Integer> beforeSlots = new ArrayList<>(harness.layout().getTabs().get(1).getSlots());
+
+		final Point slot = harness.centreOfSlot(targetFlatIndex);
+		harness.moveTo(slot);
+		harness.rightPress(slot.x, slot.y);
+		harness.render();
+		assertTrue(harness.model().isMenuOpen());
+
+		int entryIndex = -1;
+		final List<ContextMenuEntry> entries = harness.model().getMenu().getEntries();
+		for (int i = 0; i < entries.size(); i++)
+		{
+			if (entries.get(i).getAction() == MenuAction.SET_TAB_ICON)
+			{
+				entryIndex = i;
+				break;
+			}
+		}
+		assertTrue("a 'Set as tab icon' entry must be offered", entryIndex >= 0);
+
+		final Rectangle entryRect = harness.rectOnCanvas(harness.model().getMenu().entryRect(entryIndex));
+		harness.press(entryRect.x + entryRect.width / 2, entryRect.y + entryRect.height / 2);
+		harness.render();
+
+		assertFalse(harness.model().isMenuOpen());
+		assertEquals(targetItemId, harness.model().getTabIconItemId(1));
+		assertEquals("the item itself must not move", beforeSlots, harness.layout().getTabs().get(1).getSlots());
+	}
+
+	@Test
+	public void collapseBlankSpacesContextMenuEntryPacksTheMainTabDown() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickTab(1); // Main - the fixture's saved layout has a deliberate interior gap here.
+		harness.render(2);
+		assertEquals(0, harness.model().getActiveTab());
+
+		final List<Integer> beforeSlots = new ArrayList<>(harness.layout().getMainTab().getSlots());
+		assertTrue("the fixture must start with an interior gap on Main", beforeSlots.contains(null));
+		final List<Integer> expectedIds = harness.layout().getMainTab().itemIds();
+
+		final Point tab = centreOnCanvas(harness, harness.model().tabRect(1));
+		harness.moveTo(tab);
+		harness.rightPress(tab.x, tab.y);
+		harness.render();
+		assertTrue(harness.model().isMenuOpen());
+
+		int entryIndex = -1;
+		final List<ContextMenuEntry> entries = harness.model().getMenu().getEntries();
+		for (int i = 0; i < entries.size(); i++)
+		{
+			if (entries.get(i).getAction() == MenuAction.COMPACT_TAB)
+			{
+				entryIndex = i;
+				break;
+			}
+		}
+		assertTrue("a 'Collapse blank spaces' entry must be offered on a tab button", entryIndex >= 0);
+
+		final Rectangle entryRect = harness.rectOnCanvas(harness.model().getMenu().entryRect(entryIndex));
+		shoot(harness, "21-collapse-blanks");
+		harness.press(entryRect.x + entryRect.width / 2, entryRect.y + entryRect.height / 2);
+		harness.render();
+
+		assertFalse(harness.model().isMenuOpen());
+		assertFalse("no interior gaps must remain", harness.layout().getMainTab().getSlots().contains(null));
+		assertEquals("item order must be preserved", expectedIds, harness.layout().getMainTab().getSlots());
+	}
+
+	@Test
+	public void renamingATabShowsUpInTheTitleAndTheAllViewDivider() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickTab(2); // a custom tab, so the All-view divider is exercised too.
+		harness.render(2);
+		assertEquals(1, harness.model().getActiveTab());
+
+		final Point tab = centreOnCanvas(harness, harness.model().tabRect(2));
+		harness.moveTo(tab);
+		harness.rightPress(tab.x, tab.y);
+		harness.render();
+		assertTrue(harness.model().isMenuOpen());
+
+		int entryIndex = -1;
+		final List<ContextMenuEntry> entries = harness.model().getMenu().getEntries();
+		for (int i = 0; i < entries.size(); i++)
+		{
+			if (entries.get(i).getAction() == MenuAction.RENAME_TAB)
+			{
+				entryIndex = i;
+				break;
+			}
+		}
+		assertTrue("a 'Rename tab' entry must be offered on a tab button", entryIndex >= 0);
+
+		final Rectangle entryRect = harness.rectOnCanvas(harness.model().getMenu().entryRect(entryIndex));
+		harness.press(entryRect.x + entryRect.width / 2, entryRect.y + entryRect.height / 2);
+		harness.render();
+		assertFalse(harness.model().isMenuOpen());
+		assertTrue("the chatbox text input must be open", harness.controller().isChatboxInputOpen());
+
+		harness.submitTabRename("Ores");
+		harness.render();
+
+		assertFalse("submitting closes the input", harness.controller().isChatboxInputOpen());
+		assertEquals("Ores", harness.layout().getTab(1).getName());
+		assertEquals("the title must show the new name", "Ores", harness.model().titleBaseName());
+		shoot(harness, "26-renamed-tab");
+
+		harness.clickTab(0); // All view - the divider label must show the new name too.
+		harness.render(2);
+		final String dividerLabel = harness.model().getRows().stream()
+			.filter(row -> row.getKind() == io.robrichardson.banklessbank.ui.BankRow.Kind.HEADER
+				&& row.getTabIndex() == 1)
+			.map(io.robrichardson.banklessbank.ui.BankRow::getHeaderText)
+			.findFirst()
+			.orElse(null);
+		assertEquals("Ores", dividerLabel);
+
+		// Renaming back to blank must reset to the default name for this tab's position ("Tab 2" for
+		// strip index 2), not leave it empty and not restore whatever custom name it had before.
+		harness.clickTab(2);
+		harness.render(2);
+		harness.rightPress(tab.x, tab.y);
+		harness.render();
+		harness.press(entryRect.x + entryRect.width / 2, entryRect.y + entryRect.height / 2);
+		harness.render();
+		harness.submitTabRename("   ");
+		harness.render();
+
+		assertEquals("Tab 2", harness.layout().getTab(1).getName());
+	}
+
+	@Test
+	public void aWiderWindowShowsBlankColumnsAndADropOntoOneWidensTheTab() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickTab(1); // Main, an 8-wide tab
+		harness.render(2);
+		assertEquals(BankTab.DEFAULT_COLS, harness.layout().getMainTab().getCols());
+
+		final Point grip = harness.gripCentre();
+		harness.moveTo(grip);
+		harness.press(grip.x, grip.y);
+		harness.render();
+		final int right4Cols = grip.x + BankGeometry.SLOT_W * 4;
+		harness.drag(right4Cols, grip.y);
+		harness.render(2);
+		harness.release(right4Cols, grip.y);
+		harness.render(2);
+
+		assertEquals(12, harness.model().getVisibleCols());
+		assertEquals("a resize must not touch the layout", BankTab.DEFAULT_COLS,
+			harness.layout().getMainTab().getCols());
+		assertEquals("nothing to scroll sideways when the window is the wider one",
+			0, harness.model().getMaxHScroll());
+
+		final List<BankSlot> firstRow = harness.model().getRows().stream()
+			.filter(r -> r.getKind() == io.robrichardson.banklessbank.ui.BankRow.Kind.ITEMS)
+			.findFirst().get().getSlots();
+		assertEquals(12, firstRow.size());
+		for (int c = 8; c < 12; c++)
+		{
+			assertTrue("column " + c + " must be a blank beyond-width cell",
+				firstRow.get(c).isBeyondWidth());
+		}
+		shoot(harness, "22-wider-blank-columns");
+
+		// Drag the first item onto the blank column 10 of row 0: the tab widens to 11 and everything
+		// already placed keeps the (row, col) it was drawn at.
+		final int itemId = harness.model().getSlots().get(0).getCanonicalId();
+		final Integer rowOneStart = harness.layout().getMainTab().itemAt(BankTab.DEFAULT_COLS);
+		final Point from = harness.centreOfSlot(0);
+		final Point onto = harness.centreOfSlot(10);
+
+		harness.moveTo(from);
+		harness.press(from.x, from.y);
+		harness.render();
+		harness.drag(onto.x, onto.y);
+		harness.render();
+		harness.release(onto.x, onto.y);
+		harness.render(2);
+
+		assertEquals("the tab widened to hold the dropped column", 11,
+			harness.layout().getMainTab().getCols());
+		assertEquals(Integer.valueOf(itemId), harness.layout().getMainTab().itemAt(10));
+		assertEquals("the first item of row 1 is still the first item of row 1",
+			rowOneStart, harness.layout().getMainTab().itemAt(11));
+	}
+
+	@Test
+	public void aNarrowerWindowScrollsTheGridSidewaysInsteadOfRewrappingIt() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickTab(1); // Main, an 8-wide tab
+		harness.render(2);
+		final List<Integer> before = new ArrayList<>(harness.layout().getMainTab().getSlots());
+
+		final Point grip = harness.gripCentre();
+		harness.moveTo(grip);
+		harness.press(grip.x, grip.y);
+		harness.render();
+		final int left4Cols = grip.x - BankGeometry.SLOT_W * 4;
+		harness.drag(left4Cols, grip.y);
+		harness.render(2);
+		harness.release(left4Cols, grip.y);
+		harness.render(2);
+
+		assertEquals(BankGeometry.MIN_COLS, harness.model().getVisibleCols());
+		assertEquals("the arrangement itself must be untouched", before,
+			harness.layout().getMainTab().getSlots());
+		assertEquals("half the 8-wide tab is off-screen, so half of it can be scrolled to",
+			BankGeometry.MIN_COLS * BankGeometry.SLOT_W, harness.model().getMaxHScroll());
+
+		final Rectangle hbar = harness.rectOnCanvas(harness.model().hScrollbarRect());
+		assertTrue("the horizontal scrollbar must be painted", harness.nonBackgroundPixels(hbar) > 0);
+		assertTrue("it must show a thumb against its track", harness.distinctColours(hbar) >= 3);
+
+		// Slot 4 is the first cell past a 4-column viewport: off-screen now, on-screen once scrolled.
+		assertFalse("slot 4 starts out beyond the right edge", harness.model().isSlotVisible(4));
+
+		final Point overGrid = harness.canvas(harness.model().gridRect().x + 10,
+			harness.model().gridRect().y + 10);
+		for (int i = 0; i < 8; i++)
+		{
+			harness.shiftWheel(overGrid.x, overGrid.y, 1);
+		}
+		harness.render(2);
+
+		assertEquals("shift + wheel scrolls sideways and clamps at the end",
+			harness.model().getMaxHScroll(), harness.model().getHScroll());
+		assertTrue("the scrolled-to cell is now on screen", harness.model().isSlotVisible(4));
+		shoot(harness, "23-narrower-hscroll");
+
+		// A plain wheel still scrolls vertically, not sideways.
+		final int sideways = harness.model().getHScroll();
+		harness.wheel(overGrid.x, overGrid.y, 1);
+		harness.render(2);
+		assertEquals(sideways, harness.model().getHScroll());
+	}
+
+	@Test
+	public void storageModeOnALayoutTabOnlyShowsThatTabsItemsGroupedByStorage() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+
+		// The fixture's "Runes" tab (strip index 3) holds five ids split across exactly two of the
+		// ten fixture storages: Inventory (air/law/death/blood rune) and Rune pouch (cosmic rune) -
+		// a clean way to show storage mode narrowed to one tab's items instead of everything owned.
+		harness.clickTab(3);
+		harness.render(2);
+		assertEquals("Runes", 2, harness.model().getActiveTab());
+		final List<Integer> runesTabIds = harness.layout().getTabs().get(2).itemIds();
+
+		harness.controller().post(() -> harness.model().setMode(ViewMode.BY_STORAGE));
+		harness.render(2);
+
+		assertEquals(ViewMode.BY_STORAGE, harness.model().getMode());
+		final List<io.robrichardson.banklessbank.ui.BankRow> headers = harness.model().getRows().stream()
+			.filter(r -> r.getKind() == io.robrichardson.banklessbank.ui.BankRow.Kind.HEADER)
+			.collect(java.util.stream.Collectors.toList());
+		assertEquals("only the two storages holding a Runes-tab item must appear: " + headers, 2, headers.size());
+		assertEquals("Inventory", headers.get(0).getHeaderText());
+		assertEquals("Rune pouch", headers.get(1).getHeaderText());
+
+		// Air rune and Law rune are tracked in both Inventory and Rune pouch, so the two headers'
+		// slots outnumber the tab's five distinct ids - what matters is that no id outside the tab
+		// leaks in, and every one of the tab's ids is represented at least once.
+		final java.util.Set<Integer> seenIds = new java.util.LinkedHashSet<>();
+		for (BankSlot slot : harness.model().getSlots())
+		{
+			assertTrue("every grouped slot must be one of the Runes tab's own items: " + slot.getName(),
+				runesTabIds.contains(slot.getCanonicalId()));
+			seenIds.add(slot.getCanonicalId());
+		}
+		assertEquals("every one of the tab's ids must be accounted for across the storage groups",
+			new java.util.LinkedHashSet<>(runesTabIds), seenIds);
+
+		shoot(harness, "24-storage-mode-scoped");
+
+		// Switching tabs while still in storage mode refilters to the new tab.
+		harness.controller().post(() -> harness.model().setActiveTab(-1));
+		harness.render(2);
+		final long allHeaderCount = harness.model().getRows().stream()
+			.filter(r -> r.getKind() == io.robrichardson.banklessbank.ui.BankRow.Kind.HEADER).count();
+		assertTrue("the All tab must show every storage again, not just the Runes tab's two",
+			allHeaderCount > headers.size());
+	}
+
+	@Test
+	public void allTabDividersShowATabIconAndSeparatorPerNonEmptyTab() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		assertEquals("the default open view is the All tab", -1, harness.model().getActiveTab());
+
+		final List<io.robrichardson.banklessbank.ui.BankRow> dividers = harness.model().getRows().stream()
+			.filter(r -> r.getKind() == io.robrichardson.banklessbank.ui.BankRow.Kind.HEADER)
+			.collect(java.util.stream.Collectors.toList());
+		assertTrue("the fixture's four tabs must all produce a divider: " + dividers.size(), dividers.size() >= 4);
+
+		final Rectangle grid = harness.rectOnCanvas(harness.model().gridRect());
+		final io.robrichardson.banklessbank.ui.BankRow first = dividers.get(0);
+		final Rectangle band = new Rectangle(grid.x, grid.y + first.getY() - harness.model().getScroll(),
+			grid.width, first.getHeight());
+		assertTrue("the divider band must be painted", harness.nonBackgroundPixels(band) > band.width);
+
+		final Rectangle iconArea = new Rectangle(band.x + 2, band.y + 2,
+			BankGeometry.DIVIDER_ICON_W - 4, band.height - 4);
+		assertTrue("the divider's icon area must hold a drawn sprite, not just the band fill",
+			harness.distinctColours(iconArea) >= 3);
+
+		shoot(harness, "14-all-tab-dividers");
+	}
+
+	@Test
+	public void titleShowsTheGeValueOfTheActiveTabAndFollowsItAcrossTabs() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		assertTrue("the All tab's total must be non-zero with the fixture's priced items",
+			harness.model().titleValue() > 0);
+		assertEquals(harness.model().tabValue(-1), harness.model().titleValue());
+
+		harness.clickTab(1); // Main
+		harness.render(2);
+		assertEquals(0, harness.model().getActiveTab());
+		assertEquals("the title value must follow the active tab", harness.model().tabValue(0),
+			harness.model().titleValue());
+
+		final Rectangle title = harness.rectOnCanvas(harness.model().titleBarRect());
+		assertTrue("the title bar text must be painted", harness.nonBackgroundPixels(title) > title.width);
+
+		shoot(harness, "15-ge-title-value");
+
+		// Counting title-coloured pixels, not just non-background ones: the whole bar sits on the
+		// panel, so a plain non-background count never changes. Switching the config item off must
+		// shorten the painted string, which is the only proof from here that the value really
+		// reaches the title rather than only the view model.
+		final int glyphsWithValue = harness.pixelsOfColour(title, JagexColors.DARK_ORANGE_INTERFACE_TEXT);
+		harness.setShowValue(false);
+		harness.render(2);
+		final int glyphsWithout = harness.pixelsOfColour(title, JagexColors.DARK_ORANGE_INTERFACE_TEXT);
+		assertTrue("switching off the GE value must paint a shorter title (" + glyphsWithValue
+			+ " -> " + glyphsWithout + ")", glyphsWithout < glyphsWithValue);
+
+		harness.setShowValue(true);
+		harness.render(2);
+	}
+
+	@Test
+	public void placeholderIgnoreHidesAPotionDoseChainOnlyWhileUnowned() throws IOException
+	{
+		// The scenario Rob described: a potion drunk down to its last dose. Sanfew serum(4)/(3)/(2)
+		// are the spent doses, now unowned placeholders; Sanfew serum(1) is the dose still held.
+		final BankHarness harness = openedHarness();
+		harness.clickTab(1); // Main
+		harness.render(2);
+		assertEquals(0, harness.model().getActiveTab());
+
+		final int dose4 = flatIndexOf(harness, FakeStorages.SANFEW_SERUM_4);
+		final int dose3 = flatIndexOf(harness, FakeStorages.SANFEW_SERUM_3);
+		final int dose2 = flatIndexOf(harness, FakeStorages.SANFEW_SERUM_2);
+		final int dose1 = flatIndexOf(harness, FakeStorages.SANFEW_SERUM_1);
+		assertTrue("the three higher doses must start as placeholders",
+			harness.model().getSlots().get(dose4).isPlaceholder()
+				&& harness.model().getSlots().get(dose3).isPlaceholder()
+				&& harness.model().getSlots().get(dose2).isPlaceholder());
+		assertFalse("the last dose must be owned, not a placeholder",
+			harness.model().getSlots().get(dose1).isPlaceholder());
+
+		clickMenuEntry(harness, dose4, MenuAction.IGNORE_PLACEHOLDER);
+		clickMenuEntry(harness, dose3, MenuAction.IGNORE_PLACEHOLDER);
+		clickMenuEntry(harness, dose2, MenuAction.IGNORE_PLACEHOLDER);
+		harness.render(2);
+
+		assertTrue("an ignored placeholder renders as an empty cell",
+			harness.model().getSlots().get(dose4).isEmpty()
+				&& harness.model().getSlots().get(dose3).isEmpty()
+				&& harness.model().getSlots().get(dose2).isEmpty());
+		assertTrue("the owned last dose keeps showing normally",
+			harness.model().getSlots().get(dose1).getCanonicalId() == FakeStorages.SANFEW_SERUM_1);
+		assertEquals("the slot stays reserved, so the layout keeps the id in place",
+			Integer.valueOf(FakeStorages.SANFEW_SERUM_4), harness.layout().getMainTab().getSlots().get(dose4));
+		shoot(harness, "16-placeholder-ignore-list");
+
+		// Re-acquiring an ignored id must put it straight back in its reserved slot, visible again -
+		// a hidden cell offers no right-click menu (rightClickOnAnEmptyCellOpensNoMenu), so this is
+		// the only way back to "Show placeholder again" for an id that is currently unowned.
+		harness.fixture().markOwned(FakeStorages.SANFEW_SERUM_4);
+		harness.markStoragesDirty();
+		harness.render(2);
+		assertFalse("owning an ignored id again must show it, not hide it",
+			harness.model().getSlots().get(dose4).isEmpty());
+		assertEquals(FakeStorages.SANFEW_SERUM_4, harness.model().getSlots().get(dose4).getCanonicalId());
+
+		// Now that it is visible again, the unignore entry is reachable and undoes the ignore.
+		clickMenuEntry(harness, dose4, MenuAction.UNIGNORE_PLACEHOLDER);
+		harness.render(2);
+		assertFalse(harness.layout().isPlaceholderIgnored(FakeStorages.SANFEW_SERUM_4));
+
+		// The other two doses are still hidden and unowned, with no way to click them - this is
+		// what the sidebar's "clear ignored placeholders" action is for.
+		assertTrue(harness.model().getSlots().get(dose3).isEmpty());
+		// Mirrors what BanklessBankPanel's "clear ignored placeholders" button does: mutate the
+		// layout, then invalidate so the next rebuild (rebuild() short-circuits unless dirty) picks
+		// it up.
+		harness.layout().clearPlaceholderIgnores();
+		harness.model().invalidate();
+		harness.render(2);
+		assertFalse("clearing the ignore list must bring every hidden placeholder back",
+			harness.model().getSlots().get(dose3).isEmpty());
+		assertTrue(harness.model().getSlots().get(dose3).isPlaceholder());
+	}
+
+	/** Flat index into {@code model().getSlots()} of the cell currently showing {@code itemId}. */
+	private static int flatIndexOf(BankHarness harness, int itemId)
+	{
+		final List<BankSlot> slots = harness.model().getSlots();
+		for (int i = 0; i < slots.size(); i++)
+		{
+			if (slots.get(i).getCanonicalId() == itemId)
+			{
+				return i;
+			}
+		}
+		throw new AssertionError("no slot showing item " + itemId);
+	}
+
+	/** Right-clicks the given flat slot and clicks the first menu entry with the given action. */
+	private static void clickMenuEntry(BankHarness harness, int flatIndex, MenuAction action)
+	{
+		final Point cell = harness.centreOfSlot(flatIndex);
+		harness.moveTo(cell);
+		harness.rightPress(cell.x, cell.y);
+		harness.render();
+		assertTrue("right-click must open the context menu", harness.model().isMenuOpen());
+
+		final List<ContextMenuEntry> entries = harness.model().getMenu().getEntries();
+		int entryIndex = -1;
+		for (int i = 0; i < entries.size(); i++)
+		{
+			if (entries.get(i).getAction() == action)
+			{
+				entryIndex = i;
+				break;
+			}
+		}
+		assertTrue("a " + action + " entry must be offered: " + entries, entryIndex >= 0);
+
+		final Rectangle entryRect = harness.rectOnCanvas(harness.model().getMenu().entryRect(entryIndex));
+		harness.press(entryRect.x + entryRect.width / 2, entryRect.y + entryRect.height / 2);
+		harness.render();
+		assertFalse(harness.model().isMenuOpen());
+	}
+
+	private static List<String> tabNames(BankHarness harness)
+	{
+		final List<String> names = new ArrayList<>();
+		for (BankTab tab : harness.layout().getTabs())
+		{
+			names.add(tab.getName());
+		}
+		return names;
 	}
 
 	@Test
@@ -408,6 +1280,83 @@ public class OverlayScreenshotTest
 	}
 
 	@Test
+	public void bottomBarAddButtonOpensTheItemSearchAndAppendsThePickToTheActiveTab() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickTab(1); // Main
+		harness.render(2);
+
+		final Rectangle button = harness.rectOnCanvas(harness.model().addButtonRect());
+		assertTrue("the add button must be painted, not an empty patch of bar",
+			harness.nonBackgroundPixels(button) > button.width);
+		assertEquals("the add button must be hittable where it is drawn",
+			io.robrichardson.banklessbank.ui.Hit.Type.ADD_BUTTON,
+			harness.model().hitTest(harness.model().addButtonRect().x + 2,
+				harness.model().addButtonRect().y + 2).getType());
+
+		harness.clickAddButton();
+		harness.render(2);
+		assertTrue("clicking it must open the game's item search", harness.controller().isChatboxInputOpen());
+		assertFalse("and must not leave our own search field focused", harness.model().isSearchFocused());
+
+		final int before = harness.layout().getMainTab().getSlots().size();
+		harness.pickInItemSearch(FakeStorages.MANUAL_ADD_ITEM);
+		harness.render(2);
+
+		assertFalse("the search closes itself after a pick", harness.controller().isChatboxInputOpen());
+		assertEquals("the pick lands at the end of the active tab", Integer.valueOf(FakeStorages.MANUAL_ADD_ITEM),
+			harness.layout().getMainTab().getSlots().get(before));
+
+		final int flat = flatIndexOf(harness, FakeStorages.MANUAL_ADD_ITEM);
+		assertTrue("an unowned manual add renders as a placeholder",
+			harness.model().getSlots().get(flat).isPlaceholder());
+		shoot(harness, "25-manual-add-placeholder");
+
+		// Picking it a second time must not duplicate it; the view just jumps to where it already is.
+		harness.clickAddButton();
+		harness.render(2);
+		harness.pickInItemSearch(FakeStorages.MANUAL_ADD_ITEM);
+		harness.render(2);
+		assertEquals(1, occurrences(harness, FakeStorages.MANUAL_ADD_ITEM));
+	}
+
+	@Test
+	public void whileTheItemSearchIsOpenOurWindowLeavesEveryKeyAlone()
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickAddButton();
+		harness.render(2);
+		assertTrue(harness.controller().isChatboxInputOpen());
+
+		// Escape belongs to the chatbox search here: unconsumed, and our window stays open.
+		final KeyEvent escape = harness.keyPress(KeyEvent.VK_ESCAPE);
+		harness.render(2);
+		assertFalse("Escape must reach the chatbox search unconsumed", escape.isConsumed());
+		assertTrue("our window stays open behind the search", harness.controller().isOpen());
+
+		harness.type("abyssal");
+		harness.render(2);
+		assertEquals("typing must go to the chatbox search, not our search box",
+			"", harness.model().getSearch());
+	}
+
+	private static int occurrences(BankHarness harness, int itemId)
+	{
+		int n = 0;
+		for (BankTab tab : harness.layout().getTabs())
+		{
+			for (Integer id : tab.getSlots())
+			{
+				if (id != null && id == itemId)
+				{
+					n++;
+				}
+			}
+		}
+		return n;
+	}
+
+	@Test
 	public void chromeRendersWithAndWithoutInterfaceSprites()
 	{
 		// The window must paint the same rect either way: sprites when the cache can serve them,
@@ -423,11 +1372,58 @@ public class OverlayScreenshotTest
 		assertEquals(fallback.lastRenderedSize(), sprited.lastRenderedSize());
 
 		final Rectangle frame = new Rectangle(fallback.origin().x, fallback.origin().y,
-			BankGeometry.WIDTH, BankGeometry.BORDER);
+			fallback.model().size().width, BankGeometry.BORDER);
 		assertTrue("the frame band must be painted without sprites",
 			fallback.nonBackgroundPixels(frame) > frame.width);
 		assertTrue("the frame band must be painted with sprites",
 			sprited.nonBackgroundPixels(frame) > frame.width);
+	}
+
+	@Test
+	public void contextMenuIsDrawnLikeTheGamesChooseOptionMenu() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickTab(1); // Main
+		harness.render(2);
+
+		// Right-click an owned item, then park the cursor on the first row so its hover bar shows.
+		final Point slot = harness.centreOfSlot(0);
+		harness.moveTo(slot);
+		harness.rightPress(slot.x, slot.y);
+		harness.render();
+		assertTrue("right-clicking a slot opens the menu", harness.model().isMenuOpen());
+
+		final ContextMenu menu = harness.model().getMenu();
+		final List<ContextMenuEntry> entries = menu.getEntries();
+		assertTrue("the item's menu must offer a row with an orange target",
+			entries.get(0).hasTarget());
+		assertEquals("Cancel", entries.get(entries.size() - 1).getLabel());
+
+		final Rectangle box = harness.rectOnCanvas(menu.getBounds());
+		final Rectangle firstRow = harness.rectOnCanvas(menu.entryRect(0));
+		harness.moveTo(firstRow.x + firstRow.width / 2, firstRow.y + firstRow.height / 2);
+		harness.render();
+
+		// The game's chrome: a 1px 0x5D5447 frame, a black header band, a grey hover bar on the
+		// row under the cursor, and the target half of that row in JagexColors.MENU_TARGET.
+		final Color frameColour = new Color(0x5D, 0x54, 0x47);
+		assertTrue("the menu must have a 0x5D5447 frame along its top edge",
+			harness.pixelsOfColour(new Rectangle(box.x, box.y, box.width, 1), frameColour) > box.width / 2);
+		assertTrue("the header band must be black behind its title",
+			harness.pixelsOfColour(new Rectangle(box.x + 1, box.y + 1, box.width - 2, 16), Color.BLACK)
+				> (box.width - 2) * 8);
+		assertTrue("the header title must be drawn in the frame's own colour",
+			harness.pixelsOfColour(new Rectangle(box.x + 1, box.y + 1, box.width - 2, 16), frameColour) > 0);
+		assertTrue("the hovered row must be filled with the game's grey bar",
+			harness.pixelsOfColour(firstRow, new Color(0x80, 0x80, 0x80)) > firstRow.width);
+		assertTrue("the target half of a row must be drawn in the game's item orange",
+			harness.pixelsOfColour(firstRow, new Color(0xFF, 0x90, 0x40)) > 0);
+
+		shoot(harness, "27-context-menu");
+
+		harness.keyPress(KeyEvent.VK_ESCAPE);
+		harness.render();
+		assertFalse(harness.model().isMenuOpen());
 	}
 
 	private static Point centreOnCanvas(BankHarness harness, Rectangle local)

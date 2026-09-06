@@ -14,7 +14,7 @@ public final class DropTarget
 {
 	public enum Type
 	{
-		SLOT, TAB, NEW_TAB, CANCEL
+		SLOT, TAB, NEW_TAB, TAB_REORDER, CANCEL
 	}
 
 	private final Type type;

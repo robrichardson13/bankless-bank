@@ -7,7 +7,8 @@ import net.runelite.api.Client;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
-import net.runelite.client.ui.overlay.tooltip.TooltipManager;
+import net.runelite.client.game.chatbox.ChatboxItemSearch;
+import net.runelite.client.game.chatbox.ChatboxTextInput;
 
 /**
  * Test-only bridge. {@link BankViewController}, {@link BankInputListener}, {@link BankOverlay} and
@@ -23,9 +24,10 @@ public final class UiHarnessParts
 
 	public static BankViewController controller(BanklessBankPlugin plugin, Client client,
 		ItemManager itemManager, ConfigManager configManager, BanklessBankConfig config,
-		LayoutStore layoutStore)
+		LayoutStore layoutStore, ChatboxItemSearch itemSearch, ChatboxTextInput tabRenameInput)
 	{
-		return new BankViewController(plugin, client, itemManager, configManager, config, layoutStore);
+		return new BankViewController(plugin, client, itemManager, configManager, config, layoutStore,
+			itemSearch, tabRenameInput);
 	}
 
 	public static BankInputListener listener(BanklessBankConfig config, BankViewController controller)
@@ -35,10 +37,9 @@ public final class UiHarnessParts
 
 	public static BankOverlay bankOverlay(Client client, ItemManager itemManager,
 		SpriteManager spriteManager, BanklessBankConfig config, BankViewController controller,
-		BankInputListener listener, TooltipManager tooltipManager)
+		BankInputListener listener)
 	{
-		return new BankOverlay(client, itemManager, spriteManager, config, controller, listener,
-			tooltipManager);
+		return new BankOverlay(client, itemManager, spriteManager, config, controller, listener);
 	}
 
 	public static HudButtonOverlay hudOverlay(BankViewController controller, BankInputListener listener)

@@ -41,6 +41,11 @@ tasks.named('test') {
 	// fonts through FontManager. Both work without a display; forcing headless keeps the JVM from
 	// trying to attach to one on a developer machine or in CI.
 	systemProperty 'java.awt.headless', 'true'
+	// Opt-in extra output directory for the render harness's PNGs (they always go to
+	// build/screenshots too). Gradle does not forward -D to the test JVM on its own.
+	if (System.getProperty('banklessbank.screenshotDir')) {
+		systemProperty 'banklessbank.screenshotDir', System.getProperty('banklessbank.screenshotDir')
+	}
 	testLogging {
 		showStandardStreams = false
 	}

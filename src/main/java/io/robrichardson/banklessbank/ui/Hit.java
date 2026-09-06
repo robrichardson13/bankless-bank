@@ -12,8 +12,9 @@ public final class Hit
 {
 	public enum Type
 	{
-		NONE, TITLE_BAR, CLOSE, TAB, TAB_PLUS, SLOT, GRID_EMPTY, SEARCH, SEARCH_BUTTON, MODE_BUTTON,
-		SCROLL_UP, SCROLL_DOWN, SCROLL_THUMB, SCROLL_TRACK, MENU_ENTRY
+		NONE, TITLE_BAR, CLOSE, TAB, TAB_PLUS, SLOT, SLOT_EMPTY, GRID_EMPTY, SEARCH, SEARCH_BUTTON,
+		MODE_BUTTON, ADD_BUTTON, SCROLL_UP, SCROLL_DOWN, SCROLL_THUMB, SCROLL_TRACK, HSCROLL_LEFT, HSCROLL_RIGHT,
+		HSCROLL_THUMB, HSCROLL_TRACK, MENU_ENTRY, RESIZE_GRIP
 	}
 
 	private final Type type;
@@ -40,5 +41,10 @@ public final class Hit
 	public static Hit slot(int index, BankSlot slot)
 	{
 		return new Hit(Type.SLOT, index, slot);
+	}
+
+	public static Hit emptySlot(int index, BankSlot slot)
+	{
+		return new Hit(Type.SLOT_EMPTY, index, slot);
 	}
 }

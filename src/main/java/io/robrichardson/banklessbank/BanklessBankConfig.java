@@ -75,6 +75,18 @@ public interface BanklessBankConfig extends Config
 	}
 
 	@ConfigItem(
+		keyName = "showValue",
+		name = "Show GE value",
+		description = "Show the Grand Exchange value of the visible tab in the title bar",
+		section = VIEW_SECTION,
+		position = 4
+	)
+	default boolean showValue()
+	{
+		return true;
+	}
+
+	@ConfigItem(
 		keyName = "deathpilesUseAccountPlayTime",
 		name = "Cross-client tracking",
 		description = "When enabled, deathpile/grave expiry is based on account play time, so time played on "

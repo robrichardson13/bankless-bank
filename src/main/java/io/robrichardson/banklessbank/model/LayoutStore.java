@@ -1,7 +1,6 @@
 package io.robrichardson.banklessbank.model;
 
 import com.google.gson.Gson;
-import com.google.gson.JsonSyntaxException;
 import io.robrichardson.banklessbank.BanklessBankConfig;
 import javax.inject.Inject;
 import javax.inject.Singleton;
@@ -44,8 +43,11 @@ public class LayoutStore
 			layout.normalise();
 			return layout;
 		}
-		catch (JsonSyntaxException e)
+		catch (RuntimeException e)
 		{
+			// JsonSyntaxException for malformed JSON, but also anything normalise() cannot repair in
+			// structurally valid but nonsensical saved state. A fresh layout beats letting the
+			// exception escape into the render loop, where it would recur every frame.
 			log.warn("Discarding unreadable bank layout for profile {}", profileKey, e);
 			return new BankLayout();
 		}

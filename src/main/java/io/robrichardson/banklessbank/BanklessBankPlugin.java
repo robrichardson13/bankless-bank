@@ -241,7 +241,7 @@ public class BanklessBankPlugin extends Plugin
 		keyManager.unregisterKeyListener(inputListener.getHotkeyListener());
 		overlayManager.remove(bankOverlay);
 		overlayManager.remove(hudButtonOverlay);
-		inputListener.publish(false, null, false);
+		inputListener.publish(false, null, false, false);
 		inputListener.publishHud(false, null);
 		viewController.stop();
 
@@ -420,6 +420,16 @@ public class BanklessBankPlugin extends Plugin
 		storageManagerManager.load(profileKey);
 		storagesChanged();
 		loadedProfileKey = profileKey;
+	}
+
+	/**
+	 * Re-reads every persisted setting for the current profile after an external import: tracked
+	 * storages, the bank layout and the view state. Client thread only.
+	 */
+	public void reloadAfterImport()
+	{
+		reload();                       // resets + reloads storages, clears each Storage.lastSaveString
+		viewController.reloadFromConfig();
 	}
 
 	@Subscribe
