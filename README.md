@@ -13,9 +13,9 @@ withdrawing or depositing.
 
 ## Preview
 
-<!-- screenshot: main bank overlay window, open over the game, showing a populated tab grid -->
+![Bank window open over the game, showing a populated tab grid across Main and Gear tabs](docs/images/bank-window.png)
 
-<!-- gif: dragging an item between slots, onto a tab button, and resizing the window from the corner -->
+![Dragging an item between slots, onto a tab button, and resizing the window from the corner](docs/images/drag-and-resize.gif)
 
 ## What it tracks
 
@@ -74,7 +74,7 @@ blank spaces", or delete.
 
 <!-- screenshot: tab strip wrapped onto two rows with several tabs -->
 
-<!-- screenshot: right-click context menu on an item, styled like the game's "Choose Option" menu -->
+![Right-click context menu on an item, styled like the game's "Choose Option" menu](docs/images/context-menu.png)
 
 If you've already got items sitting in STASH units, your POH, or an old death pile from before
 installing Bankless Bank, importing from [Dude, Where's My Stuff?](https://github.com/Thource/dude-wheres-my-stuff)
@@ -82,7 +82,7 @@ picks all of that up in one go instead of making you revisit every storage. This
 automatically on first login if you have DWMS data and none of your own yet, or manually from
 the sidebar panel.
 
-<!-- screenshot: sidebar panel showing DWMS import status and buttons -->
+![Sidebar panel showing DWMS import status and buttons](docs/images/sidebar.png)
 
 ## FAQ
 
