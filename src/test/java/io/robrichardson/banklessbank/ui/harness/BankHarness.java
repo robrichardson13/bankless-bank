@@ -47,6 +47,7 @@ import net.runelite.client.config.Keybind;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.game.chatbox.ChatboxItemSearch;
+import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.game.chatbox.ChatboxTextInput;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mockito;
@@ -92,6 +93,10 @@ public final class BankHarness
 	/** Same shape as {@link #itemSearch}, for {@code openTabRename()}'s builder chain. */
 	private final ChatboxTextInput tabRenameInput =
 		Mockito.mock(ChatboxTextInput.class, Mockito.RETURNS_SELF);
+	/** Same shape again, for {@code openSearch()}'s builder chain (card 32). */
+	private final ChatboxTextInput searchInput =
+		Mockito.mock(ChatboxTextInput.class, Mockito.RETURNS_SELF);
+	private final ChatboxPanelManager chatboxPanelManager = Mockito.mock(ChatboxPanelManager.class);
 
 	private final Map<String, String> configStore = new HashMap<>();
 
@@ -131,7 +136,7 @@ public final class BankHarness
 		layoutStore.save(PROFILE_KEY, FakeStorages.savedLayout());
 
 		controller = UiHarnessParts.controller(plugin, client, itemManager, configManager, config,
-			layoutStore, itemSearch, tabRenameInput);
+			layoutStore, itemSearch, tabRenameInput, searchInput, chatboxPanelManager);
 		listener = UiHarnessParts.listener(config, controller);
 		bankOverlay = UiHarnessParts.bankOverlay(client, itemManager, spriteManager, config, controller,
 			listener);
@@ -612,6 +617,10 @@ public final class BankHarness
 		return listener.mouseWheelMoved(e);
 	}
 
+	/**
+	 * Raw printable keystrokes at our own key listener. Since card 32 the listener ignores them
+	 * outright - search text goes to the chatbox text input - so this only exists to prove that.
+	 */
 	public void type(String text)
 	{
 		for (char c : text.toCharArray())
@@ -619,6 +628,65 @@ public final class BankHarness
 			listener.keyTyped(new KeyEvent(EVENT_SOURCE, KeyEvent.KEY_TYPED, System.currentTimeMillis(),
 				0, KeyEvent.VK_UNDEFINED, c));
 		}
+	}
+
+	/**
+	 * Stands in for the player typing into the chatbox search prompt: replays the {@code onChanged}
+	 * callback {@code openSearch()} registered on the mock once per keystroke, exactly as
+	 * {@code ChatboxTextInput.keyTyped} does, so the filter updates live.
+	 */
+	@SuppressWarnings("unchecked")
+	public void typeInSearch(String text)
+	{
+		final ArgumentCaptor<Consumer<String>> changed = ArgumentCaptor.forClass(Consumer.class);
+		Mockito.verify(searchInput, Mockito.atLeastOnce()).onChanged(changed.capture());
+
+		final StringBuilder value = new StringBuilder();
+		for (char c : text.toCharArray())
+		{
+			value.append(c);
+			changed.getValue().accept(value.toString());
+		}
+	}
+
+	/** Enter in the search prompt: {@code onDone} then the panel closing itself. */
+	@SuppressWarnings("unchecked")
+	public void submitSearch(String text)
+	{
+		final ArgumentCaptor<Consumer<String>> done = ArgumentCaptor.forClass(Consumer.class);
+		Mockito.verify(searchInput, Mockito.atLeastOnce()).onDone(done.capture());
+		done.getValue().accept(text);
+		closeSearchPrompt();
+	}
+
+	/** Escape in the search prompt, or the game killing the panel: {@code onClose} alone. */
+	public void closeSearchPrompt()
+	{
+		final ArgumentCaptor<Runnable> closed = ArgumentCaptor.forClass(Runnable.class);
+		Mockito.verify(searchInput, Mockito.atLeastOnce()).onClose(closed.capture());
+		closed.getValue().run();
+	}
+
+	/** True once {@code openSearch()} has built the chatbox prompt at least once. */
+	public boolean searchPromptOpened()
+	{
+		return Mockito.mockingDetails(searchInput).getInvocations().stream()
+			.anyMatch(i -> "build".equals(i.getMethod().getName()));
+	}
+
+	/** How many times the search prompt has been built, for toggle assertions. */
+	public long searchPromptOpenCount()
+	{
+		return Mockito.mockingDetails(searchInput).getInvocations().stream()
+			.filter(i -> "build".equals(i.getMethod().getName()))
+			.count();
+	}
+
+	/** True once the controller has asked the chatbox panel manager to close our prompt. */
+	public boolean searchPromptClosedByUs()
+	{
+		return Mockito.mockingDetails(chatboxPanelManager).getInvocations().stream()
+			.anyMatch(i -> "close".equals(i.getMethod().getName()));
 	}
 
 	public KeyEvent keyPress(int keyCode)
@@ -647,6 +715,12 @@ public final class BankHarness
 	public void clickSearchBox()
 	{
 		click(rectCentre(rectOnCanvas(model().searchRect())));
+	}
+
+	/** Clicks the bank's search icon, left of the search box. */
+	public void clickSearchButton()
+	{
+		click(rectCentre(rectOnCanvas(model().searchButtonRect())));
 	}
 
 	/** Clicks the bottom bar's add button, which opens the game's item search. */

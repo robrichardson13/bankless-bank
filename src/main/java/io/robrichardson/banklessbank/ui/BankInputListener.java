@@ -202,11 +202,6 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 				return consume(e);
 			}
 
-			// Clicking the world clears search focus, so typing goes back to the game.
-			if (open && !altHeld)
-			{
-				controller.post(() -> controller.getViewModel().setSearchFocused(false));
-			}
 			return e;
 		}
 
@@ -244,7 +239,10 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 				{
 					controller.saveLayoutIfChanged();
 				}
-				model.closeMenu();
+				// Card 27: activateMenu() already owns the menu's lifecycle end-to-end - it closes
+				// itself in every ordinary case, and deliberately leaves a new one open for the
+				// COPY_TO_TAB_MENU two-step flow. An unconditional closeMenu() here used to stomp on
+				// that reopened step-2 menu the instant it appeared, so it never stayed open.
 				if (model.consumeCloseRequest())
 				{
 					controller.setOpen(false);
@@ -260,8 +258,6 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 			}
 
 			final Hit hit = model.hitTest(lx, ly);
-			model.setSearchFocused(hit.getType() == Hit.Type.SEARCH
-				|| hit.getType() == Hit.Type.SEARCH_BUTTON);
 			switch (hit.getType())
 			{
 				case CLOSE:
@@ -274,8 +270,22 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 					tabPressStripIndex = hit.getIndex();
 					break;
 				case SEARCH:
+					// Text entry belongs to RuneLite's chatbox text input now (card 32): the box we
+					// draw is a click target and a read-out of the active filter, nothing more.
+					controller.openSearch();
+					break;
 				case SEARCH_BUTTON:
-					// focus was set above
+					// Card 31: the icon toggles - it clears an active filter, and only opens the
+					// prompt when there is nothing to clear. The pure tier decides which.
+					if (model.clickSearchButton())
+					{
+						controller.openSearch();
+					}
+					else
+					{
+						// Cleared the filter; the prompt, if it is still up, goes with it.
+						controller.closeSearchPrompt();
+					}
 					break;
 				case MODE_BUTTON:
 					model.toggleMode();
@@ -354,11 +364,13 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 			final int w = e.getX() + resizeGrabOffset.x - bounds.x;
 			final int h = e.getY() + resizeGrabOffset.y - bounds.y;
 			final int cols = BankGeometry.colsForWidth(w);
-			final int rows = BankGeometry.rowsForHeight(h);
 			controller.post(() ->
 			{
 				controller.getViewModel().setVisibleCols(cols);
-				controller.getViewModel().setVisibleRows(rows);
+				// Rows are converted on the client thread, not here: the chrome the pixel height has
+				// to pay for includes the tab strip, whose row count follows the tab count and the
+				// column count we just applied.
+				controller.getViewModel().setVisibleRows(controller.getViewModel().rowsForHeight(h));
 			});
 			return consume(e);
 		}
@@ -528,26 +540,9 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 	@Override
 	public void keyTyped(KeyEvent e)
 	{
-		if (!controller.isOpen() || controller.isChatboxInputOpen())
-		{
-			return;
-		}
-
-		final char c = e.getKeyChar();
-		if (c < ' ' || c == 127)
-		{
-			return;
-		}
-
-		// Typing only reaches the search box while it has focus; otherwise it belongs to the game
-		// (the chatbox, most commonly), so the event must be left unconsumed and untouched.
-		if (!controller.isSearchFocused())
-		{
-			return;
-		}
-
-		controller.post(() -> controller.getViewModel().onChar(c));
-		e.consume();
+		// Nothing: search text is typed into RuneLite's chatbox text input (card 32), never into a
+		// field of ours, so no printable character is ever ours to take. Kept because KeyListener
+		// demands it.
 	}
 
 	@Override
@@ -565,7 +560,10 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 		{
 			case KeyEvent.VK_ESCAPE:
 				// Escape always belongs to us while the view is open: it closes the topmost menu,
-				// then clears the search, then unfocuses it, and only then closes the window.
+				// otherwise the window (board decision: Escape closes the window whenever it is
+				// open). It never reaches here while the search prompt is up - that Escape is the
+				// chatbox input's own, left to it by the isChatboxInputOpen() bail-out above. An
+				// active filter is cleared with the search icon (card 31), not with Escape.
 				controller.post(() ->
 				{
 					final BankViewModel model = controller.getViewModel();
@@ -573,35 +571,11 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 					{
 						model.closeMenu();
 					}
-					else if (model.isSearchFocused() && !model.getSearch().isEmpty())
-					{
-						model.clearSearch();
-					}
-					else if (model.isSearchFocused())
-					{
-						model.setSearchFocused(false);
-					}
 					else
 					{
 						controller.setOpen(false);
 					}
 				});
-				e.consume();
-				break;
-			case KeyEvent.VK_BACK_SPACE:
-				if (!controller.isSearchFocused())
-				{
-					return;
-				}
-				controller.post(() -> controller.getViewModel().onBackspace());
-				e.consume();
-				break;
-			case KeyEvent.VK_ENTER:
-				if (!controller.isSearchFocused())
-				{
-					return;
-				}
-				controller.post(() -> controller.getViewModel().setSearchFocused(false));
 				e.consume();
 				break;
 			default:

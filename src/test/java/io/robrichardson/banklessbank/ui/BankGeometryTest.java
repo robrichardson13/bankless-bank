@@ -388,12 +388,134 @@ public class BankGeometryTest
 	}
 
 	@Test
-	public void tabsShrinkToShareTheStripWhenTheWindowIsTooNarrowForElevenOfThem()
+	public void tabsShrinkToShareTheStripWhenASingleRowIsTooNarrowForElevenOfThem()
 	{
+		// A one-row strip is the forced case; the wrapping geometry below reaches for extra rows
+		// first and only shares a row out once MAX_STRIP_ROWS binds.
 		BankGeometry narrow = geom(BankGeometry.MIN_COLS, 6);
 		int w = narrow.tabWidth(11);
 		assertTrue("a narrow window must shrink its tabs", w < BankGeometry.TAB_W);
 		assertTrue("but never below the floor", w >= BankGeometry.MIN_TAB_W);
+	}
+
+	// ---- wrapped tab strip (card 34) --------------------------------------------------------
+
+	/** The geometry the view model would build for this many strip buttons at this width. */
+	private static BankGeometry wrapped(int cols, int stripLength)
+	{
+		return BankGeometry.of(cols, 6, BankGeometry.stripRowsFor(cols, stripLength));
+	}
+
+	@Test
+	public void aStripThatFitsOneRowStaysOneRowTall()
+	{
+		// 400px of inner width at the default 8 columns is 11 buttons at TAB_W.
+		assertEquals(1, BankGeometry.stripRowsFor(BankGeometry.DEFAULT_COLS, 1));
+		assertEquals(1, BankGeometry.stripRowsFor(BankGeometry.DEFAULT_COLS, 11));
+		assertEquals(BankGeometry.TAB_STRIP_H, wrapped(BankGeometry.DEFAULT_COLS, 11).stripHeight());
+	}
+
+	@Test
+	public void aStripThatOverflowsOneRowWrapsOntoTheNext()
+	{
+		assertEquals(2, BankGeometry.stripRowsFor(BankGeometry.DEFAULT_COLS, 12));
+		assertEquals(2, BankGeometry.stripRowsFor(BankGeometry.DEFAULT_COLS, 22));
+		assertEquals(3, BankGeometry.stripRowsFor(BankGeometry.DEFAULT_COLS, 23));
+	}
+
+	@Test
+	public void stripRowsNeverExceedTheirCap()
+	{
+		for (int cols = BankGeometry.MIN_COLS; cols <= BankGeometry.MAX_COLS; cols++)
+		{
+			assertTrue(BankGeometry.stripRowsFor(cols, 500) <= BankGeometry.MAX_STRIP_ROWS);
+			assertTrue(BankGeometry.stripRowsFor(cols, 1) >= 1);
+		}
+	}
+
+	@Test
+	public void everyRectBelowTheStripShiftsDownWithIt()
+	{
+		BankGeometry one = wrapped(BankGeometry.DEFAULT_COLS, 11);
+		BankGeometry two = wrapped(BankGeometry.DEFAULT_COLS, 12);
+		int shift = BankGeometry.TAB_STRIP_H;
+
+		assertEquals(one.grid().y + shift, two.grid().y);
+		assertEquals(one.scrollbar().y + shift, two.scrollbar().y);
+		assertEquals(one.bottomBar().y + shift, two.bottomBar().y);
+		assertEquals(one.resizeGrip().y + shift, two.resizeGrip().y);
+		assertEquals(one.height() + shift, two.height());
+		// The window only grows downwards: nothing above the strip moves and the width is untouched.
+		assertEquals(one.titleBar(), two.titleBar());
+		assertEquals(one.width(), two.width());
+		assertEquals(BankGeometry.height(6, 2), two.height());
+	}
+
+	@Test
+	public void wrappedTabsFillEachRowLeftToRightAndNeverOverlap()
+	{
+		final int stripLength = 12;
+		BankGeometry g = wrapped(BankGeometry.DEFAULT_COLS, stripLength);
+		Rectangle strip = g.tabStrip();
+		final int perRow = g.tabsPerRow(stripLength);
+		assertEquals(6, perRow); // 12 buttons spread evenly over two rows
+
+		Rectangle first = g.tabAt(0, stripLength);
+		Rectangle firstOfSecondRow = g.tabAt(perRow, stripLength);
+		assertEquals(strip.x, first.x);
+		assertEquals("a wrapped row restarts at the left edge", strip.x, firstOfSecondRow.x);
+		assertEquals(first.y + BankGeometry.TAB_STRIP_H, firstOfSecondRow.y);
+
+		for (int i = 0; i < stripLength; i++)
+		{
+			for (int j = i + 1; j < stripLength; j++)
+			{
+				assertFalse("tabs " + i + " and " + j + " must not overlap",
+					g.tabAt(i, stripLength).intersects(g.tabAt(j, stripLength)));
+			}
+		}
+	}
+
+	@Test
+	public void wrappingIsPreferredToShrinkingUntilTheRowCapBinds()
+	{
+		// Two rows of 11 at the default width still give every button its natural size; only once
+		// MAX_STRIP_ROWS is reached does a row start sharing itself out.
+		assertEquals(BankGeometry.TAB_W, wrapped(BankGeometry.DEFAULT_COLS, 22).tabWidth(22));
+		BankGeometry capped = wrapped(BankGeometry.MIN_COLS, 22);
+		assertEquals(BankGeometry.MAX_STRIP_ROWS, capped.getStripRows());
+		assertTrue("a capped strip shares its rows out", capped.tabWidth(22) < BankGeometry.TAB_W);
+		assertTrue("but never below the floor", capped.tabWidth(22) >= BankGeometry.MIN_TAB_W);
+	}
+
+	@Test
+	public void everyStripEntryStaysInsideTheStripAtOneTenAndTwentyTabs()
+	{
+		// The point of wrapping rather than clipping: at any window width and any tab count up to the
+		// cap, every tab and the [+] are fully inside the strip and therefore clickable.
+		for (int cols = BankGeometry.MIN_COLS; cols <= BankGeometry.MAX_COLS; cols++)
+		{
+			for (int tabs : new int[]{1, 10, 20})
+			{
+				final int stripLength = 1 + tabs + (tabs < 20 ? 1 : 0);
+				BankGeometry g = wrapped(cols, stripLength);
+				Rectangle strip = g.tabStrip();
+				for (int i = 0; i < stripLength; i++)
+				{
+					assertTrue("cols " + cols + " tabs " + tabs + " entry " + i,
+						strip.contains(g.tabAt(i, stripLength)));
+				}
+			}
+		}
+	}
+
+	@Test
+	public void theFullTabCapStaysLegibleAtTheNarrowestWindow()
+	{
+		// The reason MAX_TABS is what it is: All + 20 tabs + [+] at MIN_COLS.
+		BankGeometry g = wrapped(BankGeometry.MIN_COLS, 22);
+		assertTrue("buttons must stay well above the sliver floor",
+			g.tabWidth(22) >= BankGeometry.MIN_TAB_W * 2);
 	}
 
 	@Test

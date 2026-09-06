@@ -760,8 +760,14 @@ public class BankOverlay extends Overlay
 			return;
 		}
 
-		if (model.isDragging() && model.getDragSlot() != null
-			&& model.getDragSlot().getCanonicalId() == slot.getCanonicalId())
+		// Card 27: compare the dragged cell's (tabIndex, indexInTab), not its id - with duplication,
+		// comparing by id would dim every copy of the dragged item instead of just the one being
+		// dragged. indexInTab != -1 keeps a beyond-width blank cell from ever matching.
+		final BankSlot dragged = model.getDragSlot();
+		if (model.isDragging() && dragged != null
+			&& dragged.getTabIndex() == slot.getTabIndex()
+			&& dragged.getIndexInTab() == slot.getIndexInTab()
+			&& slot.getIndexInTab() != -1)
 		{
 			return;
 		}

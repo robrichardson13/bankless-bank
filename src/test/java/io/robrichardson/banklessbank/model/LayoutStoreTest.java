@@ -62,7 +62,7 @@ public class LayoutStoreTest
 		original.getMainTab().append(1);
 		original.getMainTab().append(2);
 		original.getMainTab().append(3);
-		int tabIdx = original.createTab(10);
+		int tabIdx = original.createTabWith(10);
 		original.getTab(tabIdx).append(11);
 
 		Gson gson = new Gson();
@@ -80,7 +80,7 @@ public class LayoutStoreTest
 	public void renamedTabNameRoundTripsThroughGson()
 	{
 		BankLayout original = new BankLayout();
-		int tabIdx = original.createTab(10);
+		int tabIdx = original.createTabWith(10);
 		original.renameTab(original.indexOfMainTab(), "Runes");
 		original.renameTab(tabIdx, "Seeds");
 
@@ -122,9 +122,47 @@ public class LayoutStoreTest
 	}
 
 	@Test
-	public void oldTenTabLayoutJsonMergesTheSurplusTabIntoMainInsteadOfDroppingIt()
+	public void loadOfALegacyDenseLayoutIsUnchangedByTheRelaxedRule()
 	{
-		// Saved before MAX_TABS dropped from 10 to 9: Main plus nine custom tabs.
+		// A legacy layout can never contain a cross-tab duplicate (the old normalise() blanked any
+		// such id down to one occurrence before the relaxed per-tab rule existed), so relaxing the
+		// dedupe scope to per-tab must not alter how this document deserialises at all.
+		when(configManager.getConfiguration(BanklessBankConfig.CONFIG_GROUP, PROFILE, "layout"))
+			.thenReturn("{\"tabs\":[{\"name\":\"Main\",\"main\":true,\"slots\":[1,2,3]},"
+				+ "{\"name\":\"Tab 1\",\"slots\":[4,5]}]}");
+
+		BankLayout loaded = store.load(PROFILE);
+
+		assertEquals(Arrays.asList(1, 2, 3), loaded.getMainTab().getSlots());
+		assertEquals(Arrays.asList(4, 5), loaded.getTab(1).getSlots());
+		assertEquals(0, loaded.copyCount(999));
+	}
+
+	@Test
+	public void surplusTabsBeyondTheCapMergeIntoMainInsteadOfBeingDropped()
+	{
+		// One tab past MAX_TABS: Main plus MAX_TABS custom tabs.
+		StringBuilder json = new StringBuilder("{\"tabs\":[{\"name\":\"Main\",\"slots\":[1]}");
+		for (int i = 1; i <= BankLayout.MAX_TABS; i++)
+		{
+			json.append(",{\"name\":\"Tab ").append(i).append("\",\"slots\":[").append(1000 + i).append("]}");
+		}
+		json.append("]}");
+		when(configManager.getConfiguration(BanklessBankConfig.CONFIG_GROUP, PROFILE, "layout"))
+			.thenReturn(json.toString());
+
+		BankLayout loaded = store.load(PROFILE);
+
+		assertEquals(BankLayout.MAX_TABS, loaded.getTabs().size());
+		assertTrue("the surplus tab's item must be merged into Main, not dropped",
+			loaded.getMainTab().contains(1000 + BankLayout.MAX_TABS));
+	}
+
+	@Test
+	public void aTenTabLayoutSavedUnderTheOldNineTabCapNowLoadsIntact()
+	{
+		// The cap was 9 for a while (card 2); a layout from then is well inside today's cap and must
+		// come back whole rather than merging anything away.
 		StringBuilder json = new StringBuilder("{\"tabs\":[{\"name\":\"Main\",\"slots\":[1]}");
 		for (int i = 1; i <= 9; i++)
 		{
@@ -136,9 +174,8 @@ public class LayoutStoreTest
 
 		BankLayout loaded = store.load(PROFILE);
 
-		assertEquals(BankLayout.MAX_TABS, loaded.getTabs().size());
-		assertTrue("the tenth (surplus) tab's item must be merged into Main, not dropped",
-			loaded.getMainTab().contains(1009));
+		assertEquals(10, loaded.getTabs().size());
+		assertFalse("nothing should have been merged into Main", loaded.getMainTab().contains(1009));
 	}
 
 	@Test
@@ -161,8 +198,8 @@ public class LayoutStoreTest
 	public void mainTabFlagRoundTripsWhenMainIsNotFirst()
 	{
 		BankLayout original = new BankLayout();
-		original.createTab(10);
-		original.createTab(20);
+		original.createTabWith(10);
+		original.createTabWith(20);
 		// Drag the main tab from index 0 to the end of the strip.
 		boolean moved = original.moveTab(original.indexOfMainTab(), original.getTabs().size() - 1);
 		assertTrue(moved);
@@ -211,7 +248,7 @@ public class LayoutStoreTest
 		BankLayout original = new BankLayout();
 		original.getMainTab().append(1);
 		original.getMainTab().setCols(12);
-		int idx = original.createTab(5);
+		int idx = original.createTabWith(5);
 		original.getTab(idx).setCols(4);
 
 		Gson gson = new Gson();
@@ -256,7 +293,7 @@ public class LayoutStoreTest
 	public void tabIconRoundTrips()
 	{
 		BankLayout original = new BankLayout();
-		int idx = original.createTab(5);
+		int idx = original.createTabWith(5);
 		original.getTab(idx).append(6);
 		original.setTabIcon(idx, 6);
 
@@ -389,7 +426,7 @@ public class LayoutStoreTest
 		int nextId = 1;
 		for (int t = 0; t < BankLayout.MAX_TABS - 1; t++)
 		{
-			layout.createTab(nextId++);
+			layout.createTabWith(nextId++);
 		}
 		for (BankTab tab : layout.getTabs())
 		{

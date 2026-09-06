@@ -25,6 +25,7 @@ import net.runelite.api.Client;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.chatbox.ChatboxItemSearch;
+import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.game.chatbox.ChatboxTextInput;
 
 /**
@@ -54,6 +55,8 @@ public class BankViewController
 	private final LayoutStore layoutStore;
 	private final ChatboxItemSearch itemSearch;
 	private final ChatboxTextInput tabRenameInput;
+	private final ChatboxTextInput searchInput;
+	private final ChatboxPanelManager chatboxPanelManager;
 
 	@Getter
 	private final BankViewModel viewModel = new BankViewModel();
@@ -82,6 +85,9 @@ public class BankViewController
 	 */
 	private volatile boolean chatboxInputOpen;
 
+	/** True only while <em>our search prompt</em> is the chatbox panel on show. */
+	private volatile boolean searchPromptOpen;
+
 	/** Overlay top-left in canvas coordinates. {@code null} until the first open centres it. */
 	private volatile Point position;
 
@@ -95,7 +101,8 @@ public class BankViewController
 	@Inject
 	BankViewController(BanklessBankPlugin plugin, Client client, ItemManager itemManager,
 		ConfigManager configManager, BanklessBankConfig config, LayoutStore layoutStore,
-		ChatboxItemSearch itemSearch, ChatboxTextInput tabRenameInput)
+		ChatboxItemSearch itemSearch, ChatboxTextInput tabRenameInput, ChatboxTextInput searchInput,
+		ChatboxPanelManager chatboxPanelManager)
 	{
 		this.plugin = plugin;
 		this.client = client;
@@ -105,6 +112,8 @@ public class BankViewController
 		this.layoutStore = layoutStore;
 		this.itemSearch = itemSearch;
 		this.tabRenameInput = tabRenameInput;
+		this.searchInput = searchInput;
+		this.chatboxPanelManager = chatboxPanelManager;
 	}
 
 	// ---- lifecycle -------------------------------------------------------------------------
@@ -142,7 +151,9 @@ public class BankViewController
 		started = false;
 		open = false;
 		searchFocused = false;
+		closeSearchPrompt();
 		chatboxInputOpen = false;
+		searchPromptOpen = false;
 		actions.clear();
 	}
 
@@ -179,6 +190,7 @@ public class BankViewController
 		if (!open)
 		{
 			searchFocused = false;
+			closeSearchPrompt();
 			post(() ->
 			{
 				viewModel.cancelDrag();
@@ -251,6 +263,65 @@ public class BankViewController
 			saveLayoutIfChanged();
 		}
 		saveViewState();
+	}
+
+	// ---- search ----------------------------------------------------------------------------
+
+	/**
+	 * Opens the search filter as a chatbox text input, the way the real bank does, instead of the
+	 * field we used to draw and type into ourselves (card 32).
+	 *
+	 * <p>This is not cosmetic. RuneLite's Key Remapping plugin ("WASD camera") rewrites W/A/S/D
+	 * {@code KeyEvent}s in place and eats the follow-up {@code KEY_TYPED} before any later listener
+	 * sees them, and {@code KeyManager} has no priority API for us to get ahead of it. Opening a
+	 * chatbox panel strips the chatbox's own key listener, which is exactly the condition that plugin
+	 * checks before remapping - so every keyboard plugin stands aside for free.
+	 *
+	 * <p>{@code onChanged} fires on every edit, so the filter updates live; it is posted through the
+	 * action queue like every other mutation, leaving the filtering itself in the pure tier. Enter
+	 * ({@code onDone}) closes the panel and leaves the filter applied, as the real bank does; Escape
+	 * closes it the same way through {@code onClose}.
+	 *
+	 * <p>Client thread only ({@code build()} opens a chatbox panel), which is where the input
+	 * listener's posted runnable runs it.
+	 */
+	public void openSearch()
+	{
+		chatboxInputOpen = true;
+		searchPromptOpen = true;
+		searchFocused = true;
+		viewModel.setSearchFocused(true);
+		searchInput
+			.prompt("Show items whose names contain the following text:")
+			.value(viewModel.getSearch())
+			.onChanged((String text) -> post(() -> viewModel.setSearch(text)))
+			.onDone((String text) -> post(() ->
+			{
+				viewModel.setSearch(text);
+				viewModel.setSearchFocused(false);
+			}))
+			.onClose(() ->
+			{
+				chatboxInputOpen = false;
+				searchPromptOpen = false;
+				post(() -> viewModel.setSearchFocused(false));
+			})
+			.build();
+	}
+
+	/**
+	 * Closes our search prompt if it is the panel on show - on the search icon's clear (card 31) and
+	 * whenever the window itself closes. Safe from any thread
+	 * ({@code ChatboxPanelManager.close()} hops to the client thread itself), and guarded by
+	 * {@link #searchPromptOpen} so we never close another plugin's chatbox panel.
+	 */
+	public void closeSearchPrompt()
+	{
+		if (searchPromptOpen)
+		{
+			searchPromptOpen = false;
+			chatboxPanelManager.close();
+		}
 	}
 
 	// ---- tab rename ------------------------------------------------------------------------
@@ -397,7 +468,7 @@ public class BankViewController
 			return;
 		}
 
-		viewModel.setMaxRows(BankGeometry.rowsForHeight(client.getCanvasHeight()));
+		viewModel.setMaxRows(viewModel.rowsForHeight(client.getCanvasHeight()));
 		viewModel.setMaxCols(BankGeometry.colsForWidth(client.getCanvasWidth()));
 
 		boolean profileChanged = syncProfile();

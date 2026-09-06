@@ -8,6 +8,7 @@ import java.awt.Rectangle;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
@@ -42,6 +43,11 @@ public class BankViewModel
 	/** How many columns the canvas can actually hold, published by the controller each frame. */
 	private int maxCols = BankGeometry.MAX_COLS;
 	/** Cached {@code (visibleCols, visibleRows)} geometry; replaced whenever either changes. */
+	/**
+	 * Cache behind {@link #geom()}; never read directly. The geometry's third dimension, the number of
+	 * tab-strip rows, follows the tab count, which changes without going through any setter, so the
+	 * cache is validated on every read rather than only when the window is resized.
+	 */
 	private BankGeometry geom = BankGeometry.defaults();
 
 	// ---- view state ----
@@ -95,6 +101,8 @@ public class BankViewModel
 	// ---- context menu ----
 	private boolean menuOpen;
 	private ContextMenu menu;
+	/** Anchor point the open menu was built at, so a step-2 menu can reopen at the same point. */
+	private Point menuAnchor;
 
 	/** Raised by the title-bar menu's "Close" entry; the controller consumes it. */
 	private boolean closeRequested;
@@ -169,7 +177,6 @@ public class BankViewModel
 	public void setVisibleRows(int rows)
 	{
 		this.visibleRows = clamp(rows, BankGeometry.MIN_ROWS, maxRows);
-		this.geom = BankGeometry.of(visibleCols, visibleRows);
 		// The active tab renders trailing rows down to the viewport height, so the row count is an
 		// input to the grid, not just a window size.
 		invalidate();
@@ -197,7 +204,6 @@ public class BankViewModel
 		}
 
 		visibleCols = c;
-		this.geom = BankGeometry.of(visibleCols, visibleRows);
 		invalidate();
 		rebuild();
 		this.scroll = clamp(scroll, 0, getMaxScroll());
@@ -243,10 +249,35 @@ public class BankViewModel
 		return maxCols;
 	}
 
-	/** The current {@code (cols, rows)} geometry. Every rect the view exposes comes from here. */
+	/**
+	 * The current {@code (cols, rows, stripRows)} geometry. Every rect the view exposes comes from
+	 * here. Recomputed only when one of the three actually changes, so a frame that drains the action
+	 * queue before it reads any rect still sees exactly one geometry.
+	 */
 	public BankGeometry geometry()
 	{
+		return geom();
+	}
+
+	private BankGeometry geom()
+	{
+		final int stripRows = BankGeometry.stripRowsFor(visibleCols, getStripLength());
+		if (geom.getCols() != visibleCols || geom.getRows() != visibleRows
+			|| geom.getStripRows() != stripRows)
+		{
+			geom = BankGeometry.of(visibleCols, visibleRows, stripRows);
+		}
 		return geom;
+	}
+
+	/**
+	 * Grid rows a window of this pixel height would hold, at the strip height the current tab count
+	 * needs. The AWT-side resize drag works in pixels and posts them here, since the strip row count
+	 * is client-thread state.
+	 */
+	public int rowsForHeight(int pixelHeight)
+	{
+		return BankGeometry.rowsForHeight(pixelHeight, geom().getStripRows());
 	}
 
 	/** Canonical id -> display name, used for placeholders whose id is not in any snapshot. */
@@ -587,9 +618,17 @@ public class BankViewModel
 		return new BankSlot(id, nameFor(id), 0, false, true, Collections.emptyList(), tabIndex, indexInTab);
 	}
 
+	/**
+	 * One result per distinct id (card 27): a search result answers "do I own this and where is it",
+	 * and N identical cells for a duplicated item is noise that pushes real hits off the screen. The
+	 * first copy in strip order wins, so the result cell still carries a real
+	 * {@code (tabIndex, indexInTab)} origin and the drag-to-tab copy gesture keeps working. Deliberate
+	 * asymmetry with the All view, which shows every copy under its own tab's divider.
+	 */
 	private int buildSearchRows(List<BankRow> rowsOut, List<BankSlot> slotsOut, int y)
 	{
 		List<BankSlot> built = new ArrayList<>();
+		Set<Integer> emitted = new LinkedHashSet<>();
 		List<Integer> tabsToScan = new ArrayList<>();
 		if (activeTab >= 0 && layout.getTab(activeTab) != null)
 		{
@@ -615,7 +654,7 @@ public class BankViewModel
 					continue;
 				}
 				BankSlot slot = buildTabSlot(id, t, i);
-				if (slot != null && matchesSearch(slot.getName()))
+				if (slot != null && matchesSearch(slot.getName()) && emitted.add(id))
 				{
 					built.add(slot);
 				}
@@ -716,38 +755,45 @@ public class BankViewModel
 		return count;
 	}
 
-	/** Occupied, currently-owned slots across every tab. What the title bar shows. */
+	/**
+	 * Distinct owned ids across every tab. What the title bar shows. Card 27: duplicated ids count
+	 * once - the title bar answers "what do I own", and a player who files one item under two tabs
+	 * still owns exactly one of it.
+	 */
 	public int getTotalItemCount()
 	{
-		int count = 0;
+		Set<Integer> distinct = new HashSet<>();
 		for (BankTab tab : layout.getTabs())
 		{
 			for (int id : tab.itemIds())
 			{
 				if (ownedIds.contains(id))
 				{
-					count++;
+					distinct.add(id);
 				}
 			}
 		}
-		return count;
+		return distinct.size();
 	}
 
-	/** Occupied slots across every tab whose id is not owned. Ignored ids are excluded. */
+	/**
+	 * Distinct unowned, non-ignored ids across every tab. Ignored ids are excluded. Card 27:
+	 * duplicated ids count once, for the same reason as {@link #getTotalItemCount()}.
+	 */
 	public int getTotalPlaceholderCount()
 	{
-		int count = 0;
+		Set<Integer> distinct = new HashSet<>();
 		for (BankTab tab : layout.getTabs())
 		{
 			for (int id : tab.itemIds())
 			{
 				if (!ownedIds.contains(id) && !layout.isPlaceholderIgnored(id))
 				{
-					count++;
+					distinct.add(id);
 				}
 			}
 		}
-		return count;
+		return distinct.size();
 	}
 
 	public int getTabCount()
@@ -760,15 +806,28 @@ public class BankViewModel
 	 * {@code tabIndex == -1}. Placeholders contribute nothing because {@link #qtyById} only holds
 	 * owned ids. Accumulated in {@code long}: a UIM's stack of a high-value item overflows
 	 * {@code int} easily.
+	 *
+	 * <p>Card 27: the {@code -1} (all-tabs) roll-up sums each distinct id once across the whole
+	 * layout, so a duplicated item's value is not double-counted; a real tab's own value is already
+	 * id-set based per tab and needs no change.
 	 */
 	public long tabValue(int tabIndex)
 	{
 		if (tabIndex == -1)
 		{
-			long total = 0;
+			Set<Integer> distinct = new HashSet<>();
 			for (BankTab tab : layout.getTabs())
 			{
-				total += tabValueOf(tab);
+				distinct.addAll(tab.itemIds());
+			}
+			long total = 0;
+			for (int id : distinct)
+			{
+				Long qty = qtyById.get(id);
+				if (qty != null)
+				{
+					total += qty * unitPrice(id);
+				}
 			}
 			return total;
 		}
@@ -856,9 +915,12 @@ public class BankViewModel
 	 * tab when the All view is active - and scrolls it into sight. This is what the bottom bar's add
 	 * button does once the game's item search hands back an id.
 	 *
-	 * <p>An id already somewhere in the layout is not added twice: the view jumps to whichever tab
-	 * already holds it instead. Either way the search filter is cleared and the by-storage view
-	 * flips back to tabs first, since neither shows a tab grid the new slot could appear in.
+	 * <p>Card 27: an id already in the tab the window is showing is not added twice there - the view
+	 * jumps to it instead. An id that lives in some <i>other</i> tab is still added here as a second
+	 * copy, since with duplication "jump to wherever it already is" would otherwise make the feature
+	 * unreachable from the add button once an item has any copy at all. Either way the search filter
+	 * is cleared and the by-storage view flips back to tabs first, since neither shows a tab grid the
+	 * new slot could appear in.
 	 *
 	 * <p>With placeholders turned off the item is still added, but nothing renders it while it is
 	 * unowned and the next {@link #syncLayout()} blanks its slot again - manual adds are a
@@ -883,15 +945,15 @@ public class BankViewModel
 		}
 		setSearchFocused(false);
 
-		final int existing = layout.indexOfTab(itemId);
-		if (existing >= 0)
+		final int target = activeTab >= 0 ? activeTab : layout.indexOfMainTab();
+		final BankTab tab = layout.getTab(target);
+		if (tab != null && tab.contains(itemId))
 		{
-			setActiveTab(existing);
+			setActiveTab(target);
 			scrollToItem(itemId);
 			return false;
 		}
 
-		final int target = activeTab >= 0 ? activeTab : layout.indexOfMainTab();
 		if (!layout.addItem(itemId, target))
 		{
 			return false;
@@ -941,12 +1003,26 @@ public class BankViewModel
 		return false;
 	}
 
-	/** layout.sync(getOwnedIds(), placeholdersEnabled). Returns true when the layout changed. */
+	/**
+	 * layout.sync(getOwnedIds(), placeholdersEnabled). Returns true when the layout changed.
+	 *
+	 * <p>Card 27: menu rows are addressed by {@code (tabIndex, slotIndex)} rather than by item id, so
+	 * a tab pruned out from under an open menu (which sync does when placeholders are off and a tab's
+	 * last item stops being owned) would silently re-point every row at whichever tab shifted into
+	 * that index - "Remove copy" would then delete a cell the player never clicked. Closing the menu
+	 * whenever the strip changes shape is the honest response: what the player right-clicked is no
+	 * longer where it was. An ordinary sync that only adds or blanks items leaves the menu alone.
+	 */
 	public boolean syncLayout()
 	{
+		final int tabsBefore = layout.getTabs().size();
 		boolean changed = layout.sync(ownedIds, placeholdersEnabled);
 		if (changed)
 		{
+			if (menuOpen && layout.getTabs().size() != tabsBefore)
+			{
+				closeMenu();
+			}
 			invalidate();
 		}
 		return changed;
@@ -1094,88 +1170,88 @@ public class BankViewModel
 
 	public Dimension size()
 	{
-		return geom.size();
+		return geom().size();
 	}
 
 	public Rectangle resizeGripRect()
 	{
-		return geom.resizeGrip();
+		return geom().resizeGrip();
 	}
 
 	public Rectangle titleBarRect()
 	{
-		return geom.titleBar();
+		return geom().titleBar();
 	}
 
 	public Rectangle closeButtonRect()
 	{
-		return geom.closeButton();
+		return geom().closeButton();
 	}
 
 	/** Width of one tab button at the current window width and strip length. */
 	public int tabWidth()
 	{
-		return geom.tabWidth(getStripLength());
+		return geom().tabWidth(getStripLength());
 	}
 
 	public Rectangle tabRect(int stripIndex)
 	{
-		return geom.tabAt(stripIndex, getStripLength());
+		return geom().tabAt(stripIndex, getStripLength());
 	}
 
 	public Rectangle gridRect()
 	{
-		return geom.grid();
+		return geom().grid();
 	}
 
 	/** The whole bottom button bar. */
 	public Rectangle bottomBarRect()
 	{
-		return geom.bottomBar();
+		return geom().bottomBar();
 	}
 
 	/** The search text field, between the search button and the view-mode button. */
 	public Rectangle searchRect()
 	{
-		return geom.searchBox();
+		return geom().searchBox();
 	}
 
 	public Rectangle searchButtonRect()
 	{
-		return geom.searchButton();
+		return geom().searchButton();
 	}
 
 	public Rectangle modeButtonRect()
 	{
-		return geom.modeButton();
+		return geom().modeButton();
 	}
 
 	/** The bottom bar's "add an item" button, which opens the game's item search. */
 	public Rectangle addButtonRect()
 	{
-		return geom.addButton();
+		return geom().addButton();
 	}
 
 	/** The whole scrollbar column, arrow buttons included. */
 	public Rectangle scrollbarRect()
 	{
-		return geom.scrollbar();
+		return geom().scrollbar();
 	}
 
 	public Rectangle scrollUpRect()
 	{
-		return geom.scrollUp();
+		return geom().scrollUp();
 	}
 
 	public Rectangle scrollDownRect()
 	{
-		return geom.scrollDown();
+		return geom().scrollDown();
 	}
 
 	/** The draggable stretch of scrollbar between the two arrow buttons. */
 	public Rectangle scrollTrackRect()
 	{
-		return geom.scrollTrack();
+		return geom().scrollTrack();
 	}
 
 	public Rectangle scrollThumbRect()
@@ -1189,22 +1265,22 @@ public class BankViewModel
 	 */
 	public Rectangle hScrollbarRect()
 	{
-		return geom.hScrollbar();
+		return geom().hScrollbar();
 	}
 
 	public Rectangle hScrollLeftRect()
 	{
-		return geom.hScrollLeft();
+		return geom().hScrollLeft();
 	}
 
 	public Rectangle hScrollRightRect()
 	{
-		return geom.hScrollRight();
+		return geom().hScrollRight();
 	}
 
 	public Rectangle hScrollTrackRect()
 	{
-		return geom.hScrollTrack();
+		return geom().hScrollTrack();
 	}
 
 	public Rectangle hScrollThumbRect()
@@ -1253,7 +1329,7 @@ public class BankViewModel
 			{
 				int col = slotIndex - idx;
 				int rowLocalY = gridRect().y + row.getY() - scroll;
-				Rectangle r = geom.slotInRow(rowLocalY, col);
+				Rectangle r = geom().slotInRow(rowLocalY, col);
 				r.x -= hScroll;
 				return r;
 			}
@@ -1269,7 +1345,7 @@ public class BankViewModel
 				{
 					int rowLocalY = gridRect().y + row.getY() - scroll;
 					int col = Math.min(row.getSlots().size(), visibleCols - 1);
-					Rectangle r = geom.slotInRow(rowLocalY, col);
+					Rectangle r = geom().slotInRow(rowLocalY, col);
 					r.x -= hScroll;
 					return r;
 				}
@@ -1466,11 +1542,6 @@ public class BankViewModel
 
 	public void beginDrag(int x, int y)
 	{
-		if (mode != ViewMode.TABS)
-		{
-			return;
-		}
-
 		Hit hit = hitTest(x, y);
 		if (hit.getType() != Hit.Type.SLOT)
 		{
@@ -1494,10 +1565,10 @@ public class BankViewModel
 
 	private void updateDropSlot(int x, int y)
 	{
-		// Grid cells are not drop targets while a search filter is active (a searched result's
-		// position is not a real slot), so there is nothing to highlight there; only the tab strip
-		// (drawn separately by the overlay, driven off hitTest directly) is a valid target then.
-		if (!search.isEmpty())
+		// Grid cells are not drop targets while a search filter is active or in BY_STORAGE mode
+		// (neither a searched result's nor a storage row's position is a real slot), so there is
+		// nothing to highlight there; only the tab strip is a valid target then.
+		if (isStripOnlyDrag())
 		{
 			dropSlotIndex = -1;
 			return;
@@ -1528,23 +1599,45 @@ public class BankViewModel
 
 		DropTarget result = DropTarget.cancel();
 
-		if (mode == ViewMode.TABS && !search.isEmpty())
+		if (isStripOnlyDrag())
 		{
-			result = endSearchDrag(hitTest(x, y), dragSlot.getCanonicalId());
+			result = endStripOnlyDrag(hitTest(x, y), dragSlot.getCanonicalId());
 		}
-		else if (mode == ViewMode.TABS)
+		else
 		{
 			final BankTab activeRef = activeTabRef();
 			Hit hit = hitTest(x, y);
-			int itemId = dragSlot.getCanonicalId();
+			// Card 27: grid drags move exactly the copy the drag started on, resolved by cell
+			// (tabIndex, indexInTab), never by re-resolving the id - the whole point of a copy being
+			// addressed by its slot, not its id.
+			final int fromTab = dragSlot.getTabIndex();
+			int fromSlot = dragSlot.getIndexInTab();
 
 			if (hit.getType() == Hit.Type.SLOT_EMPTY && hit.getSlot() != null && hit.getSlot().getTabIndex() != -1)
 			{
 				BankSlot slot = hit.getSlot();
-				final int targetSlot = slot.isBeyondWidth()
-					? widenForDrop(slot.getTabIndex(), slot.getGridRow(), slot.getGridCol())
-					: slot.getIndexInTab();
-				if (targetSlot >= 0 && layout.placeItem(itemId, slot.getTabIndex(), targetSlot))
+				int targetSlot;
+				if (slot.isBeyondWidth())
+				{
+					// Widening re-indexes every id in the tab (index i moves to rowOf(i) * newCols +
+					// colOf(i)), so a source slot in the same tab is stale the moment widenForDrop
+					// returns. Remember the source's (row, col) at the old width and re-resolve it at
+					// the new one; without this a drag from any row below the first moves whichever
+					// id happens to land on the old flat index, or silently nothing at all.
+					final BankTab srcTab = layout.getTab(fromTab);
+					final int srcRow = srcTab == null ? -1 : srcTab.rowOf(fromSlot);
+					final int srcCol = srcTab == null ? -1 : srcTab.colOf(fromSlot);
+					targetSlot = widenForDrop(slot.getTabIndex(), slot.getGridRow(), slot.getGridCol());
+					if (targetSlot >= 0 && srcTab != null && fromTab == slot.getTabIndex())
+					{
+						fromSlot = srcTab.indexAt(srcRow, srcCol);
+					}
+				}
+				else
+				{
+					targetSlot = slot.getIndexInTab();
+				}
+				if (targetSlot >= 0 && layout.moveSlot(fromTab, fromSlot, slot.getTabIndex(), targetSlot))
 				{
 					result = new DropTarget(DropTarget.Type.SLOT, slot.getTabIndex(), targetSlot);
 				}
@@ -1553,9 +1646,12 @@ public class BankViewModel
 			else if (hit.getType() == Hit.Type.SLOT && hit.getSlot() != null)
 			{
 				BankSlot slot = hit.getSlot();
-				if (slot.getCanonicalId() != itemId && slot.getTabIndex() != -1)
+				// "Not the same cell" rather than "not the same id": dropping a copy onto a different
+				// cell holding the same id reaches moveSlot, which refuses it (§3.4).
+				boolean sameCell = slot.getTabIndex() == fromTab && slot.getIndexInTab() == fromSlot;
+				if (!sameCell && slot.getTabIndex() != -1)
 				{
-					if (layout.placeItem(itemId, slot.getTabIndex(), slot.getIndexInTab()))
+					if (layout.moveSlot(fromTab, fromSlot, slot.getTabIndex(), slot.getIndexInTab()))
 					{
 						result = new DropTarget(DropTarget.Type.SLOT, slot.getTabIndex(), slot.getIndexInTab());
 					}
@@ -1569,15 +1665,17 @@ public class BankViewModel
 				int tabIndex = hit.getIndex() == 0 ? layout.indexOfMainTab() : hit.getIndex() - 1;
 				if (tabIndex >= 0 && tabIndex < getTabCount())
 				{
-					layout.moveItemToTab(itemId, tabIndex);
+					if (layout.moveSlotToTab(fromTab, fromSlot, tabIndex))
+					{
+						BankTab tab = layout.getTab(tabIndex);
+						result = new DropTarget(DropTarget.Type.TAB, tabIndex, tab == null ? 0 : tab.maxOccupiedIndex());
+					}
 					syncActiveTab(activeRef);
-					BankTab tab = layout.getTab(tabIndex);
-					result = new DropTarget(DropTarget.Type.TAB, tabIndex, tab == null ? 0 : tab.maxOccupiedIndex());
 				}
 			}
 			else if (hit.getType() == Hit.Type.TAB_PLUS)
 			{
-				int newIndex = layout.createTab(itemId);
+				int newIndex = layout.createTabFrom(fromTab, fromSlot);
 				if (newIndex != -1)
 				{
 					syncActiveTab(activeRef);
@@ -1588,10 +1686,12 @@ public class BankViewModel
 			else if (hit.getType() == Hit.Type.GRID_EMPTY)
 			{
 				final int targetTab = activeTab == -1 ? layout.indexOfMainTab() : activeTab;
-				layout.moveItemToTab(itemId, targetTab);
+				if (layout.moveSlotToTab(fromTab, fromSlot, targetTab))
+				{
+					final BankTab tab = layout.getTab(targetTab);
+					result = new DropTarget(DropTarget.Type.TAB, targetTab, tab == null ? 0 : tab.maxOccupiedIndex());
+				}
 				syncActiveTab(activeRef);
-				final BankTab tab = layout.getTab(targetTab);
-				result = new DropTarget(DropTarget.Type.TAB, targetTab, tab == null ? 0 : tab.maxOccupiedIndex());
 			}
 		}
 
@@ -1622,33 +1722,55 @@ public class BankViewModel
 	}
 
 	/**
-	 * Resolves a drop started from a search result. Valid targets are the tab buttons in the strip
-	 * (appends to the end of that tab, matching {@link BankLayout#moveItemToTab}) and the plus
-	 * button (creates a new tab, matching the non-search plus-drop behaviour); the All button, grid
-	 * cells (search result positions are not real slots) and anything else cancel. Dropping onto the
-	 * tab the item already lives in is a no-op.
+	 * True while the only legal drop target for an item drag is the tab strip: a search filter is
+	 * active, or the view is in {@code BY_STORAGE} mode. Both build dense rows whose cells carry no
+	 * real slot ({@code BY_STORAGE} cells are built with {@code tabIndex/indexInTab == -1}, and a
+	 * search result's grid position bears no relation to where the item actually sits), so there is
+	 * nothing for a grid drop to mean.
 	 */
-	private DropTarget endSearchDrag(Hit hit, int itemId)
+	private boolean isStripOnlyDrag()
+	{
+		return mode != ViewMode.TABS || !search.isEmpty();
+	}
+
+	/**
+	 * Resolves a drop started from a search result or a {@code BY_STORAGE} row. Valid targets are the
+	 * tab buttons in the strip (copies onto that tab, matching {@link BankLayout#copyItemToTab}) and
+	 * the plus button (copies into a new tab, matching {@link BankLayout#createTabWith}); the All
+	 * button, grid cells (neither a search result's nor a storage row's position is a real slot) and
+	 * anything else cancel. Dropping onto a tab that already holds the id is a no-op.
+	 *
+	 * <p>Card 27 board decision: every strip-only drag (search results <b>and</b> storage-mode drags,
+	 * both routed here via {@link #isStripOnlyDrag()}) now <b>copies</b> onto the target tab rather
+	 * than moving - search results are found across every tab, so "move it out of wherever it was"
+	 * was always the surprising reading, and this doubles as a fast bulk-filing gesture. Grid drags
+	 * (below, in {@link #endDrag}) remain moves.
+	 */
+	private DropTarget endStripOnlyDrag(Hit hit, int itemId)
 	{
 		if (hit.getType() == Hit.Type.TAB && hit.getIndex() >= 1)
 		{
 			int tabIndex = hit.getIndex() - 1;
-			if (tabIndex < 0 || tabIndex >= getTabCount() || layout.indexOfTab(itemId) == tabIndex)
+			BankTab target = layout.getTab(tabIndex);
+			if (target == null || target.contains(itemId))
 			{
 				return DropTarget.cancel();
 			}
 
 			final BankTab activeRef = activeTabRef();
-			layout.moveItemToTab(itemId, tabIndex);
+			int landedAt = layout.copyItemToTab(itemId, tabIndex);
+			if (landedAt < 0)
+			{
+				return DropTarget.cancel();
+			}
 			syncActiveTab(activeRef);
-			BankTab tab = layout.getTab(tabIndex);
-			return new DropTarget(DropTarget.Type.TAB, tabIndex, tab == null ? 0 : tab.maxOccupiedIndex());
+			return new DropTarget(DropTarget.Type.TAB, tabIndex, landedAt);
 		}
 
 		if (hit.getType() == Hit.Type.TAB_PLUS)
 		{
 			final BankTab activeRef = activeTabRef();
-			int newIndex = layout.createTab(itemId);
+			int newIndex = layout.createTabWith(itemId);
 			if (newIndex == -1)
 			{
 				return DropTarget.cancel();
@@ -1659,20 +1781,20 @@ public class BankViewModel
 		}
 
 		// The All button (TAB index 0), grid cells (SLOT/SLOT_EMPTY) and everywhere else are not
-		// valid drop targets while a search filter is active.
+		// valid drop targets while a search filter is active or storage mode is showing.
 		return DropTarget.cancel();
 	}
 
 	/**
 	 * The strip index the current item drag would actually drop onto, or -1. The overlay paints its
 	 * tab highlight from this rather than from a bare hit test, so the highlight and
-	 * {@link #endDrag} agree: while a search filter is active only real tab buttons and the plus
-	 * button accept a drop, the All button does not, and dropping onto the tab the item already
-	 * lives in is a no-op.
+	 * {@link #endDrag} agree: while the drag is strip-only (a search filter is active, or the view is
+	 * in {@code BY_STORAGE} mode) only real tab buttons and the plus button accept a drop, the All
+	 * button does not, and dropping onto the tab the item already lives in is a no-op.
 	 */
 	public int dropTabStripIndex(int x, int y)
 	{
-		if (!dragging || dragSlot == null || mode != ViewMode.TABS)
+		if (!dragging || dragSlot == null)
 		{
 			return -1;
 		}
@@ -1687,13 +1809,24 @@ public class BankViewModel
 			return -1;
 		}
 
-		if (search.isEmpty())
+		if (!isStripOnlyDrag())
 		{
+			// Card 27: a grid drag onto a tab that already holds the id is refused by moveSlotToTab,
+			// so the highlight must refuse it too or the strip would promise a drop that snaps back.
+			// Strip index 0 is the All button, which for a grid drag means the main tab.
+			final int gridTarget = hit.getIndex() == 0 ? layout.indexOfMainTab() : hit.getIndex() - 1;
+			final BankTab gridTab = layout.getTab(gridTarget);
+			if (gridTab == null || (gridTarget != dragSlot.getTabIndex()
+				&& gridTab.contains(dragSlot.getCanonicalId())))
+			{
+				return -1;
+			}
 			return hit.getIndex();
 		}
 
 		int tabIndex = hit.getIndex() - 1;
-		if (tabIndex < 0 || tabIndex >= getTabCount() || layout.indexOfTab(dragSlot.getCanonicalId()) == tabIndex)
+		BankTab tab = layout.getTab(tabIndex);
+		if (tab == null || tab.contains(dragSlot.getCanonicalId()))
 		{
 			return -1;
 		}
@@ -1818,8 +1951,16 @@ public class BankViewModel
 
 	public void openMenu(int x, int y)
 	{
-		Hit hit = hitTest(x, y);
-		List<ContextMenuEntry> entries = buildMenuEntries(hit);
+		openMenuAt(x, y, buildMenuEntries(hitTest(x, y)));
+	}
+
+	/**
+	 * The sizing, centring and clamping half of {@link #openMenu(int, int)}, factored out so the
+	 * step-2 copy menu can reuse it at the same anchor. Also remembers the anchor in
+	 * {@link #menuAnchor} so a later menu can reopen at the same point.
+	 */
+	private void openMenuAt(int x, int y, List<ContextMenuEntry> entries)
+	{
 		if (entries.isEmpty())
 		{
 			return;
@@ -1845,6 +1986,75 @@ public class BankViewModel
 
 		menu = new ContextMenu(entries, new Rectangle(mx, my, width, height));
 		menuOpen = true;
+		menuAnchor = new Point(x, y);
+	}
+
+	/** Menu-building helper: the tabs a copy of this id could still go to, in strip order. */
+	private List<Integer> copyTargetTabs(int itemId)
+	{
+		List<Integer> targets = new ArrayList<>();
+		for (int t = 0; t < layout.getTabs().size(); t++)
+		{
+			if (layout.canCopyTo(itemId, t))
+			{
+				targets.add(t);
+			}
+		}
+		return targets;
+	}
+
+	/**
+	 * How many rows a menu may have before it would run past the bottom of the window. The menu is
+	 * clamped into the window rather than the canvas (only clicks inside our published bounds reach
+	 * it), so a menu taller than the window would have rows that can never be clicked. Never below 2,
+	 * so a paged menu always has room for at least one target and its "More" row.
+	 */
+	int maxMenuEntries()
+	{
+		final int usable = size().height - BankGeometry.MENU_HEADER_H - BankGeometry.MENU_BODY_GAP
+			- BankGeometry.MENU_BOTTOM_PAD;
+		return Math.max(2, usable / BankGeometry.MENU_ENTRY_H);
+	}
+
+	/** Step-2 menu rows: one "Copy to &lt;tab&gt;" per {@link #copyTargetTabs}, then Cancel. */
+	private List<ContextMenuEntry> buildCopyTargetEntries(int itemId)
+	{
+		return buildCopyTargetEntries(itemId, 0);
+	}
+
+	/**
+	 * Step-2 menu rows, paged. With the tab cap at {@link BankLayout#MAX_TABS} a full target list is
+	 * far taller than the window's minimum height, and a menu is clamped into the window, so the
+	 * overflow would be unclickable. Instead the list is cut into pages of whatever
+	 * {@link #maxMenuEntries()} allows and a "More" row walks to the next one, cycling back to the
+	 * first at the end so no page is a dead end. A list that fits keeps exactly its old shape: the
+	 * targets, then Cancel, with no "More" row at all.
+	 */
+	private List<ContextMenuEntry> buildCopyTargetEntries(int itemId, int page)
+	{
+		final List<Integer> targets = copyTargetTabs(itemId);
+		final int max = maxMenuEntries();
+		final boolean paged = targets.size() + 1 > max;
+		// One row goes to Cancel, and on a paged menu one more goes to "More".
+		final int perPage = paged ? Math.max(1, max - 2) : targets.size();
+		final int pages = paged ? (targets.size() + perPage - 1) / perPage : 1;
+		final int current = pages <= 0 ? 0 : Math.floorMod(page, pages);
+		final int from = current * perPage;
+		final int to = Math.min(targets.size(), from + perPage);
+
+		List<ContextMenuEntry> entries = new ArrayList<>();
+		for (int i = from; i < to; i++)
+		{
+			final int t = targets.get(i);
+			entries.add(new ContextMenuEntry("Copy to", MenuAction.COPY_TO_TAB, t, itemId, tabName(t)));
+		}
+		if (paged)
+		{
+			final String label = "More (" + (current + 1) + "/" + pages + ")";
+			entries.add(new ContextMenuEntry(label, MenuAction.COPY_TO_TAB_PAGE, itemId, current + 1, null));
+		}
+		entries.add(new ContextMenuEntry("Cancel", MenuAction.CANCEL, -1));
+		return entries;
 	}
 
 	/** The tab's name for a menu row's orange target half; a sane fallback when the index is stale. */
@@ -1862,41 +2072,65 @@ public class BankViewModel
 		{
 			BankSlot slot = hit.getSlot();
 			final String item = slot.getName();
+			final int id = slot.getCanonicalId();
+			final int tabIndex = slot.getTabIndex();
+			final int slotIndex = slot.getIndexInTab();
+			final boolean duplicated = layout.copyCount(id) > 1;
+			final boolean canCopy = getTabCount() > 1 && !copyTargetTabs(id).isEmpty();
 			if (slot.isPlaceholder())
 			{
-				entries.add(new ContextMenuEntry("Release placeholder", MenuAction.RELEASE_PLACEHOLDER, slot.getCanonicalId(), item));
-				entries.add(new ContextMenuEntry("Never show placeholder", MenuAction.IGNORE_PLACEHOLDER, slot.getCanonicalId(), item));
-				entries.add(new ContextMenuEntry("Release all placeholders in", MenuAction.RELEASE_ALL_IN_TAB, slot.getTabIndex(), tabName(slot.getTabIndex())));
+				if (duplicated)
+				{
+					entries.add(new ContextMenuEntry("Remove copy", MenuAction.REMOVE_COPY, tabIndex, slotIndex, item));
+				}
+				else
+				{
+					entries.add(new ContextMenuEntry("Release placeholder", MenuAction.RELEASE_PLACEHOLDER, tabIndex, slotIndex, item));
+				}
+				entries.add(new ContextMenuEntry("Never show placeholder", MenuAction.IGNORE_PLACEHOLDER, id, item));
+				if (canCopy)
+				{
+					entries.add(new ContextMenuEntry("Copy to", MenuAction.COPY_TO_TAB_MENU, id, tabIndex, "another tab"));
+				}
+				entries.add(new ContextMenuEntry("Release all placeholders in", MenuAction.RELEASE_ALL_IN_TAB, tabIndex, tabName(tabIndex)));
 				entries.add(new ContextMenuEntry("Release all placeholders", MenuAction.RELEASE_ALL, -1));
 				entries.add(new ContextMenuEntry("Cancel", MenuAction.CANCEL, -1));
 			}
 			else
 			{
-				BankTab ownerTab = layout.getTab(slot.getTabIndex());
+				BankTab ownerTab = layout.getTab(tabIndex);
 				boolean ownerIsMain = ownerTab != null && ownerTab.isMain();
+				if (duplicated)
+				{
+					entries.add(new ContextMenuEntry("Remove copy", MenuAction.REMOVE_COPY, tabIndex, slotIndex, item));
+				}
 				if (!ownerIsMain)
 				{
-					entries.add(new ContextMenuEntry("Set as tab icon", MenuAction.SET_TAB_ICON, slot.getCanonicalId(), item));
+					entries.add(new ContextMenuEntry("Set as tab icon", MenuAction.SET_TAB_ICON, tabIndex, id, item));
 				}
 				if (ownerTab != null && ownerTab.getIcon() > 0)
 				{
-					entries.add(new ContextMenuEntry("Clear tab icon", MenuAction.CLEAR_TAB_ICON, slot.getTabIndex(), tabName(slot.getTabIndex())));
+					entries.add(new ContextMenuEntry("Clear tab icon", MenuAction.CLEAR_TAB_ICON, tabIndex, tabName(tabIndex)));
 				}
 				if (getTabCount() < BankLayout.MAX_TABS)
 				{
-					entries.add(new ContextMenuEntry("New tab from", MenuAction.NEW_TAB_FROM_ITEM, slot.getCanonicalId(), item));
+					entries.add(new ContextMenuEntry("New tab from", MenuAction.NEW_TAB_FROM_ITEM, tabIndex, slotIndex, item));
 				}
-				if (!ownerIsMain)
+				if (canCopy)
 				{
-					entries.add(new ContextMenuEntry("Move to main tab", MenuAction.MOVE_TO_MAIN, slot.getCanonicalId(), item));
+					entries.add(new ContextMenuEntry("Copy to", MenuAction.COPY_TO_TAB_MENU, id, tabIndex, "another tab"));
 				}
-				if (layout.isPlaceholderIgnored(slot.getCanonicalId()))
+				if (!ownerIsMain && !layout.getMainTab().contains(id))
 				{
-					entries.add(new ContextMenuEntry("Show placeholder again", MenuAction.UNIGNORE_PLACEHOLDER, slot.getCanonicalId(), item));
+					entries.add(new ContextMenuEntry("Move to main tab", MenuAction.MOVE_TO_MAIN, tabIndex, slotIndex, item));
+				}
+				if (layout.isPlaceholderIgnored(id))
+				{
+					entries.add(new ContextMenuEntry("Show placeholder again", MenuAction.UNIGNORE_PLACEHOLDER, id, item));
 				}
 				else
 				{
-					entries.add(new ContextMenuEntry("Never show placeholder", MenuAction.IGNORE_PLACEHOLDER, slot.getCanonicalId(), item));
+					entries.add(new ContextMenuEntry("Never show placeholder", MenuAction.IGNORE_PLACEHOLDER, id, item));
 				}
 				entries.add(new ContextMenuEntry("Cancel", MenuAction.CANCEL, -1));
 			}
@@ -1941,6 +2175,7 @@ public class BankViewModel
 	{
 		menuOpen = false;
 		menu = null;
+		menuAnchor = null;
 	}
 
 	/**
@@ -2006,7 +2241,7 @@ public class BankViewModel
 		switch (entry.getAction())
 		{
 			case RELEASE_PLACEHOLDER:
-				changed = layout.releasePlaceholder(entry.getArg(), ownedIds);
+				changed = layout.releasePlaceholderAt(entry.getArg(), entry.getArg2(), ownedIds);
 				syncActiveTab(activeRef);
 				break;
 			case RELEASE_ALL_IN_TAB:
@@ -2019,7 +2254,7 @@ public class BankViewModel
 				break;
 			case NEW_TAB_FROM_ITEM:
 			{
-				int newIndex = layout.createTab(entry.getArg());
+				int newIndex = layout.createTabFrom(entry.getArg(), entry.getArg2());
 				changed = newIndex != -1;
 				syncActiveTab(activeRef);
 				if (changed)
@@ -2030,9 +2265,9 @@ public class BankViewModel
 			}
 			case SET_TAB_ICON:
 			{
-				int tab = layout.indexOfTab(entry.getArg());
+				int tab = entry.getArg();
 				BankTab ownerTab = layout.getTab(tab);
-				changed = ownerTab != null && !ownerTab.isMain() && layout.setTabIcon(tab, entry.getArg());
+				changed = ownerTab != null && !ownerTab.isMain() && layout.setTabIcon(tab, entry.getArg2());
 				break;
 			}
 			case CLEAR_TAB_ICON:
@@ -2045,9 +2280,8 @@ public class BankViewModel
 				changed = layout.removePlaceholderIgnore(entry.getArg());
 				break;
 			case MOVE_TO_MAIN:
-				layout.moveItemToTab(entry.getArg(), layout.indexOfMainTab());
+				changed = layout.moveSlotToTab(entry.getArg(), entry.getArg2(), layout.indexOfMainTab());
 				syncActiveTab(activeRef);
-				changed = true;
 				break;
 			case DELETE_TAB:
 			{
@@ -2073,6 +2307,43 @@ public class BankViewModel
 				closeRequested = true;
 				changed = false;
 				break;
+			case COPY_TO_TAB_MENU:
+			{
+				// Not a mutation: closes this menu and opens the target chooser at the same anchor.
+				// Card 27 override (board decision): kept as its own two-step flow per §4.1 of the
+				// spec, since a flat "Copy to <tab>" list in the first menu would overflow the
+				// minimum window height (see the spec's geometry table).
+				final Point anchor = menuAnchor;
+				closeMenu();
+				// buildCopyTargetEntries always appends a trailing Cancel row, so it is never itself
+				// empty - the "no target left" guard has to ask copyTargetTabs, the list of actual
+				// copy rows, or a target tab that vanished between menu-open and click (e.g. another
+				// copy landing there first) would still reopen a menu with nothing but Cancel in it.
+				if (anchor != null && !copyTargetTabs(entry.getArg()).isEmpty())
+				{
+					openMenuAt(anchor.x, anchor.y, buildCopyTargetEntries(entry.getArg()));
+				}
+				return false;
+			}
+			case COPY_TO_TAB_PAGE:
+			{
+				// Like COPY_TO_TAB_MENU: not a mutation, just the same chooser at the next page.
+				final Point pageAnchor = menuAnchor;
+				closeMenu();
+				if (pageAnchor != null && !copyTargetTabs(entry.getArg()).isEmpty())
+				{
+					openMenuAt(pageAnchor.x, pageAnchor.y,
+						buildCopyTargetEntries(entry.getArg(), entry.getArg2()));
+				}
+				return false;
+			}
+			case COPY_TO_TAB:
+				changed = layout.copyItemToTab(entry.getArg2(), entry.getArg()) >= 0;
+				break;
+			case REMOVE_COPY:
+				changed = layout.removeSlot(entry.getArg(), entry.getArg2());
+				syncActiveTab(activeRef);
+				break;
 			case CANCEL:
 			default:
 				changed = false;
@@ -2088,26 +2359,26 @@ public class BankViewModel
 	}
 
 	// =========================================================================================
-	// Keyboard
+	// Search
 	// =========================================================================================
 
-	public boolean onChar(char c)
+	/**
+	 * The search icon's click, in the pure tier (card 31). Returns true when the caller should open
+	 * the chatbox search prompt, false when the click has already been dealt with by clearing the
+	 * active filter.
+	 *
+	 * <p>The icon toggles: text entry lives in RuneLite's chatbox text input now (card 32), so the
+	 * icon is the only quick way back to an unfiltered grid - there is no field of ours to backspace
+	 * through.
+	 */
+	public boolean clickSearchButton()
 	{
-		if (c < ' ' || c == 127)
+		if (!search.isEmpty())
 		{
+			clearSearch();
+			setSearchFocused(false);
 			return false;
 		}
-		setSearch(search + c);
-		return true;
-	}
-
-	public boolean onBackspace()
-	{
-		if (search.isEmpty())
-		{
-			return false;
-		}
-		setSearch(search.substring(0, search.length() - 1));
 		return true;
 	}
 

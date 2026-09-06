@@ -15,6 +15,9 @@ import lombok.NoArgsConstructor;
  * viewport over that grid, never an input to it, so resizing the window never moves an item.
  * Widening the tab ({@link #widenTo(int)}) re-indexes every id so each keeps its {@code (row, col)};
  * {@link #compact(int)} is the deliberate reflow, packing the ids down at a new width.
+ *
+ * <p>An id occurs at most once in a tab, but may occur in several tabs - see {@link BankLayout} for
+ * the duplication rules.
  */
 @Data
 @NoArgsConstructor
@@ -227,6 +230,23 @@ public class BankTab
 			return false;
 		}
 		setAt(idx, null);
+		return true;
+	}
+
+	/**
+	 * Blanks slot {@code index} whatever it holds, trimming trailing nulls. Unlike
+	 * {@link #removeItem(int)} this addresses a slot rather than an id, which is what removing one
+	 * copy of a duplicated item needs.
+	 *
+	 * @return true when the slot held an id
+	 */
+	public boolean removeAt(int index)
+	{
+		if (index < 0 || index >= slots.size() || slots.get(index) == null)
+		{
+			return false;
+		}
+		setAt(index, null);
 		return true;
 	}
 

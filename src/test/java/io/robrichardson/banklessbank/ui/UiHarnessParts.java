@@ -8,6 +8,7 @@ import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.SpriteManager;
 import net.runelite.client.game.chatbox.ChatboxItemSearch;
+import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.game.chatbox.ChatboxTextInput;
 
 /**
@@ -24,10 +25,11 @@ public final class UiHarnessParts
 
 	public static BankViewController controller(BanklessBankPlugin plugin, Client client,
 		ItemManager itemManager, ConfigManager configManager, BanklessBankConfig config,
-		LayoutStore layoutStore, ChatboxItemSearch itemSearch, ChatboxTextInput tabRenameInput)
+		LayoutStore layoutStore, ChatboxItemSearch itemSearch, ChatboxTextInput tabRenameInput,
+		ChatboxTextInput searchInput, ChatboxPanelManager chatboxPanelManager)
 	{
 		return new BankViewController(plugin, client, itemManager, configManager, config, layoutStore,
-			itemSearch, tabRenameInput);
+			itemSearch, tabRenameInput, searchInput, chatboxPanelManager);
 	}
 
 	public static BankInputListener listener(BanklessBankConfig config, BankViewController controller)

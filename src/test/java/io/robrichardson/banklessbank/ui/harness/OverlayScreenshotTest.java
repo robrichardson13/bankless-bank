@@ -6,6 +6,7 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
+import io.robrichardson.banklessbank.model.BankLayout;
 import io.robrichardson.banklessbank.model.BankTab;
 import io.robrichardson.banklessbank.ui.BankGeometry;
 import io.robrichardson.banklessbank.ui.BankSlot;
@@ -209,16 +210,17 @@ public class OverlayScreenshotTest
 		harness.annotate("Self-drawn tooltip lines:", tooltipLines);
 		shoot(harness, "07-tooltip-multi-storage");
 
-		// ---- e. search, typed through the input listener ------------------------------------
+		// ---- e. search, typed into the chatbox prompt ---------------------------------------
 		harness.clickTab(0);
 		harness.render(2);
 		final int rowsBeforeSearch = harness.model().getRows().size();
 
 		harness.clickSearchBox();
 		harness.render();
-		assertTrue("clicking the search box focuses it", harness.model().isSearchFocused());
+		assertTrue("clicking the search box opens the chatbox prompt", harness.searchPromptOpened());
+		assertTrue("and marks the box active while it is up", harness.model().isSearchFocused());
 
-		harness.type("rune");
+		harness.typeInSearch("rune");
 		harness.render(2);
 
 		assertEquals("rune", harness.model().getSearch());
@@ -232,7 +234,8 @@ public class OverlayScreenshotTest
 		}
 		shoot(harness, "08-search-rune");
 
-		harness.keyPress(KeyEvent.VK_ESCAPE);
+		// Card 31: the search icon is what clears an active filter now.
+		harness.clickSearchButton();
 		harness.render(2);
 		assertEquals("", harness.model().getSearch());
 
@@ -355,8 +358,13 @@ public class OverlayScreenshotTest
 		assertFalse(harness.model().isMenuOpen());
 	}
 
+	/**
+	 * Card 32: focus is now nothing more than "our chatbox prompt is the panel on show", so a click
+	 * in the world neither steals it nor closes the prompt - the prompt owns its own lifecycle
+	 * (Enter, Escape, or the game killing the panel).
+	 */
 	@Test
-	public void clickOutsideClearsSearchFocus()
+	public void clickingOutsideLeavesTheSearchPromptAlone()
 	{
 		final BankHarness harness = openedHarness();
 		harness.clickSearchBox();
@@ -367,52 +375,61 @@ public class OverlayScreenshotTest
 		harness.press(outside.x, outside.y);
 		harness.render();
 
-		assertFalse("clicking the world must clear search focus so typing goes back to the game",
+		assertTrue("a world click must not silently unfocus a prompt that is still open",
 			harness.model().isSearchFocused());
+
+		harness.closeSearchPrompt();
+		harness.render(2);
+		assertFalse("closing the prompt is what drops the focus", harness.model().isSearchFocused());
 	}
 
+	/** Live filtering: the prompt's onChanged fires per keystroke, so the grid narrows as you type. */
 	@Test
-	public void typingOnlyFillsSearchWhenTheSearchBoxHasFocus()
+	public void typingInTheChatboxPromptFiltersLive()
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickTab(0);
+		harness.render(2);
+		final int rowsBefore = harness.model().getRows().size();
+
+		harness.clickSearchBox();
+		harness.render();
+		harness.typeInSearch("rune");
+		harness.render(2);
+
+		assertEquals("rune", harness.model().getSearch());
+		assertTrue("the filter must apply before Enter is ever pressed",
+			harness.model().getRows().size() < rowsBefore);
+
+		// Enter closes the panel and leaves the filter applied, exactly as the real bank does.
+		harness.submitSearch("rune");
+		harness.render(2);
+		assertEquals("rune", harness.model().getSearch());
+		assertFalse(harness.controller().isChatboxInputOpen());
+		assertFalse(harness.model().isSearchFocused());
+	}
+
+	/** Raw keystrokes at our listener are never ours now, focused or not (card 32). */
+	@Test
+	public void rawTypingNeverReachesTheSearchFilter()
 	{
 		final BankHarness harness = openedHarness();
 		harness.render();
-		assertFalse(harness.model().isSearchFocused());
 
 		harness.type("abc");
 		harness.render();
-		assertEquals("typing without focus must not steal from the game (e.g. the chatbox)",
+		assertEquals("", harness.model().getSearch());
+
+		harness.clickSearchBox();
+		harness.render();
+		harness.type("abc");
+		harness.render();
+		assertEquals("typing goes to the chatbox prompt, never to a field of ours",
 			"", harness.model().getSearch());
 
-		harness.clickSearchBox();
+		final KeyEvent backspace = harness.keyPress(KeyEvent.VK_BACK_SPACE);
 		harness.render();
-		harness.type("abc");
-		harness.render();
-		assertEquals("abc", harness.model().getSearch());
-	}
-
-	@Test
-	public void backspaceIsConsumedOnlyWhileSearchIsFocused()
-	{
-		final BankHarness harness = openedHarness();
-		harness.clickSearchBox();
-		harness.render();
-		harness.type("abc");
-		harness.render();
-		assertEquals("abc", harness.model().getSearch());
-
-		harness.controller().post(() -> harness.model().setSearchFocused(false));
-		harness.render();
-		final KeyEvent unfocused = harness.keyPress(KeyEvent.VK_BACK_SPACE);
-		harness.render();
-		assertFalse(unfocused.isConsumed());
-		assertEquals("backspace while unfocused must do nothing", "abc", harness.model().getSearch());
-
-		harness.clickSearchBox();
-		harness.render();
-		final KeyEvent focused = harness.keyPress(KeyEvent.VK_BACK_SPACE);
-		harness.render();
-		assertTrue(focused.isConsumed());
-		assertEquals("ab", harness.model().getSearch());
+		assertFalse("backspace belongs to the game again", backspace.isConsumed());
 	}
 
 	@Test
@@ -432,23 +449,51 @@ public class OverlayScreenshotTest
 		assertTrue("escape must close only the menu while one is open", harness.controller().isOpen());
 	}
 
+	/**
+	 * Card 31: the search icon toggles. With a filter active it clears it (and the prompt with it);
+	 * with nothing to clear it opens the prompt again.
+	 */
 	@Test
-	public void escapeWithFocusedNonEmptySearchClearsTextButKeepsFocus()
+	public void searchIconTogglesTheFilter()
+	{
+		final BankHarness harness = openedHarness();
+		harness.clickSearchButton();
+		harness.render(2);
+		assertEquals(1, harness.searchPromptOpenCount());
+
+		harness.typeInSearch("rune");
+		harness.render(2);
+		assertEquals("rune", harness.model().getSearch());
+
+		harness.clickSearchButton();
+		harness.render(2);
+		assertEquals("clicking the icon with a filter active clears it", "", harness.model().getSearch());
+		assertFalse(harness.model().isSearchFocused());
+		assertEquals("and does not re-open the prompt", 1, harness.searchPromptOpenCount());
+		assertTrue("the open prompt is closed with it", harness.searchPromptClosedByUs());
+
+		harness.clickSearchButton();
+		harness.render(2);
+		assertEquals("with nothing to clear it opens the prompt again", 2, harness.searchPromptOpenCount());
+	}
+
+	/** Board decision: Escape closes the window whenever it is open. The filter is the icon's job. */
+	@Test
+	public void escapeClosesTheWindowAndLeavesTheFilterApplied()
 	{
 		final BankHarness harness = openedHarness();
 		harness.clickSearchBox();
 		harness.render();
-		harness.type("rune");
-		harness.render();
+		harness.typeInSearch("rune");
+		harness.submitSearch("rune");
+		harness.render(2);
 		assertEquals("rune", harness.model().getSearch());
 
 		harness.keyPress(KeyEvent.VK_ESCAPE);
-		harness.render();
+		harness.render(2);
 
-		assertEquals("", harness.model().getSearch());
-		assertTrue("escape clears the text first, keeping focus so typing can resume",
-			harness.model().isSearchFocused());
-		assertTrue(harness.controller().isOpen());
+		assertFalse(harness.controller().isOpen());
+		assertEquals("rune", harness.model().getSearch());
 	}
 
 	@Test
@@ -550,12 +595,13 @@ public class OverlayScreenshotTest
 		assertEquals(BankGeometry.MIN_COLS, harness.model().getVisibleCols());
 		assertEquals(BankGeometry.width(BankGeometry.MIN_COLS), harness.lastRenderedSize().width);
 
-		// The strip shrinks its buttons rather than pushing any of them off the right edge, so every
-		// tab and the [+] stay clickable at the narrowest window.
+		// The strip wraps onto extra rows (and, once the row cap binds, shrinks its buttons) rather
+		// than pushing any of them off the right edge, so every tab and the [+] stay clickable at the
+		// narrowest window.
 		final Rectangle strip = harness.model().geometry().tabStrip();
 		final int stripLength = harness.model().getStripLength();
-		assertTrue("a narrow window must shrink the tab buttons",
-			harness.model().tabWidth() < BankGeometry.TAB_W);
+		assertTrue("a narrow window must not widen the tab buttons past their natural size",
+			harness.model().tabWidth() <= BankGeometry.TAB_W);
 		for (int i = 0; i < stripLength; i++)
 		{
 			assertTrue("strip entry " + i + " must stay inside the strip",
@@ -709,7 +755,7 @@ public class OverlayScreenshotTest
 	}
 
 	@Test
-	public void dragASearchResultOntoATabButtonMovesItThere() throws IOException
+	public void dragASearchResultOntoATabButtonCopiesItThere() throws IOException
 	{
 		final BankHarness harness = openedHarness();
 		harness.render();
@@ -720,7 +766,7 @@ public class OverlayScreenshotTest
 
 		harness.clickSearchBox();
 		harness.render();
-		harness.type("rune");
+		harness.typeInSearch("rune");
 		harness.render(2);
 
 		assertFalse("the 'rune' search on the Runes tab must find something",
@@ -744,14 +790,16 @@ public class OverlayScreenshotTest
 		harness.render(2);
 
 		assertFalse(harness.model().isDragging());
-		assertFalse("the item must have left the Runes tab", harness.layout().getTab(2).contains(itemId));
-		assertTrue("the item must now be in the Gear tab", harness.layout().getTab(1).contains(itemId));
+		// Card 27: a search-result drag onto a tab COPIES, so the original stays in the Runes tab.
+		assertTrue("the item must still be in the Runes tab", harness.layout().getTab(2).contains(itemId));
+		assertTrue("the item must now also be in the Gear tab", harness.layout().getTab(1).contains(itemId));
 		assertEquals("rune", harness.model().getSearch());
+		boolean stillInResults = false;
 		for (BankSlot slot : harness.model().getSlots())
 		{
-			assertFalse("the moved item must have dropped out of the Runes-tab search results",
-				slot.getCanonicalId() == itemId);
+			stillInResults |= slot.getCanonicalId() == itemId;
 		}
+		assertTrue("the copied item's original is still found by the Runes-tab search", stillInResults);
 	}
 
 	@Test
@@ -1057,6 +1105,146 @@ public class OverlayScreenshotTest
 	}
 
 	@Test
+	public void dragAStorageModeItemOntoATabButtonCopiesItThere() throws IOException
+	{
+		final BankHarness harness = openedHarness();
+
+		// Strip: 0 = All, 1 = Main, 2 = Gear, 3 = Runes, 4 = Seeds.
+		harness.clickTab(3);
+		harness.render(2);
+		harness.controller().post(() -> harness.model().setMode(ViewMode.BY_STORAGE));
+		harness.render(2);
+
+		assertEquals(ViewMode.BY_STORAGE, harness.model().getMode());
+		assertFalse("storage mode on the Runes tab must show something",
+			harness.model().getSlots().isEmpty());
+		final int itemId = harness.model().getSlots().get(0).getCanonicalId();
+		assertTrue("the dragged item must start out in the Runes tab", harness.layout().getTab(2).contains(itemId));
+
+		final Point from = harness.centreOfSlot(0);
+		final Point gearTab = centreOnCanvas(harness, harness.model().tabRect(2));
+
+		harness.moveTo(from);
+		harness.press(from.x, from.y);
+		harness.render();
+		harness.drag(gearTab.x, gearTab.y);
+		harness.render();
+
+		assertTrue("a drag from a storage-mode row must be live", harness.model().isDragging());
+		shoot(harness, "28-storage-mode-drag-to-tab");
+
+		harness.release(gearTab.x, gearTab.y);
+		harness.render(2);
+
+		assertFalse(harness.model().isDragging());
+		// Card 27: a storage-mode drag onto a tab COPIES too (both paths share endStripOnlyDrag).
+		assertTrue("the item must still be in the Runes tab", harness.layout().getTab(2).contains(itemId));
+		assertTrue("the item must now also be in the Gear tab", harness.layout().getTab(1).contains(itemId));
+		assertEquals("the view must still be in storage mode", ViewMode.BY_STORAGE, harness.model().getMode());
+		boolean stillInRows = false;
+		for (BankSlot slot : harness.model().getSlots())
+		{
+			stillInRows |= slot.getCanonicalId() == itemId;
+		}
+		assertTrue("the copied item's original is still in the Runes-tab-scoped storage rows", stillInRows);
+	}
+
+	@Test
+	public void copyingAnItemToAnotherTabShowsItInBothAndDimsOnlyTheDraggedCopy() throws IOException
+	{
+		// Card 27: the two-step "Copy to" menu, the resulting duplicate in the All view, and a
+		// grid drag of just one copy (which must dim only the dragged cell - see BankOverlay's
+		// drag-source comparison, retrofitted from an id comparison to a (tabIndex, indexInTab) one).
+		final BankHarness harness = openedHarness();
+
+		// Strip: 0 = All, 1 = Main, 2 = Gear, 3 = Runes, 4 = Seeds.
+		harness.clickTab(2);
+		harness.render(2);
+		assertTrue("the Gear tab must start out holding the platebody",
+			harness.layout().getTab(1).contains(FakeStorages.RUNE_PLATEBODY));
+
+		// Step 1: right-click the platebody and activate "Copy to / another tab".
+		final Point plateSlot = harness.centreOfSlot(0);
+		harness.moveTo(plateSlot);
+		harness.rightPress(plateSlot.x, plateSlot.y);
+		harness.render();
+		assertTrue(harness.model().isMenuOpen());
+
+		int copyToIdx = -1;
+		List<ContextMenuEntry> firstMenu = harness.model().getMenu().getEntries();
+		for (int i = 0; i < firstMenu.size(); i++)
+		{
+			if (firstMenu.get(i).getAction() == MenuAction.COPY_TO_TAB_MENU)
+			{
+				copyToIdx = i;
+				break;
+			}
+		}
+		assertTrue("a 'Copy to' row must be offered: " + firstMenu, copyToIdx >= 0);
+		Rectangle copyToRect = harness.rectOnCanvas(harness.model().getMenu().entryRect(copyToIdx));
+		harness.press(copyToRect.x + copyToRect.width / 2, copyToRect.y + copyToRect.height / 2);
+		harness.render();
+
+		// Step 2: the target-tab chooser, reopened at the same anchor rather than a submenu.
+		assertTrue("activating Copy to must open the step-2 menu, not close it outright",
+			harness.model().isMenuOpen());
+		List<ContextMenuEntry> secondMenu = harness.model().getMenu().getEntries();
+		assertTrue("the step-2 menu must offer at least one real target plus Cancel", secondMenu.size() >= 2);
+		assertEquals(MenuAction.COPY_TO_TAB, secondMenu.get(0).getAction());
+		shoot(harness, "29-duplicate-item");
+
+		final int targetTab = secondMenu.get(0).getArg();
+		Rectangle targetRect = harness.rectOnCanvas(harness.model().getMenu().entryRect(0));
+		harness.press(targetRect.x + targetRect.width / 2, targetRect.y + targetRect.height / 2);
+		harness.render();
+		assertFalse(harness.model().isMenuOpen());
+
+		assertTrue("the original copy must stay in Gear",
+			harness.layout().getTab(1).contains(FakeStorages.RUNE_PLATEBODY));
+		assertTrue("the new copy must land in the chosen tab",
+			harness.layout().getTab(targetTab).contains(FakeStorages.RUNE_PLATEBODY));
+
+		// The All view shows one cell per copy, each under its own tab's divider.
+		harness.controller().post(() -> harness.model().setActiveTab(-1));
+		harness.render(2);
+		long copies = harness.model().getSlots().stream()
+			.filter(s -> s != null && !s.isEmpty() && s.getCanonicalId() == FakeStorages.RUNE_PLATEBODY)
+			.count();
+		assertEquals("both copies must render in the All view", 2, copies);
+
+		// Dragging one copy dims only that cell, never its sibling copy elsewhere. Do this back on
+		// the single-tab Gear view (guaranteed in the viewport, unlike a distant All-view row) -
+		// the drag-source comparison the fix covers is per-cell, not dependent on what else is shown.
+		harness.clickTab(2);
+		harness.render(2);
+		BankSlot gearCopy = null;
+		for (BankSlot s : harness.model().getSlots())
+		{
+			if (s != null && !s.isEmpty() && s.getCanonicalId() == FakeStorages.RUNE_PLATEBODY)
+			{
+				gearCopy = s;
+				break;
+			}
+		}
+		assertNotNull("the Gear copy must still be present", gearCopy);
+		final int dragIndex = harness.model().getSlots().indexOf(gearCopy);
+		final Point dragFrom = harness.centreOfSlot(dragIndex);
+
+		harness.moveTo(dragFrom);
+		harness.press(dragFrom.x, dragFrom.y);
+		harness.render();
+		harness.drag(dragFrom.x + 40, dragFrom.y);
+		harness.render();
+
+		assertTrue("the drag must be live before release", harness.model().isDragging());
+		assertEquals(1, harness.model().getDragSlot().getTabIndex());
+
+		harness.release(dragFrom.x + 40, dragFrom.y);
+		harness.render();
+		assertFalse(harness.model().isDragging());
+	}
+
+	@Test
 	public void allTabDividersShowATabIconAndSeparatorPerNonEmptyTab() throws IOException
 	{
 		final BankHarness harness = openedHarness();
@@ -1118,7 +1306,7 @@ public class OverlayScreenshotTest
 	@Test
 	public void placeholderIgnoreHidesAPotionDoseChainOnlyWhileUnowned() throws IOException
 	{
-		// The scenario Rob described: a potion drunk down to its last dose. Sanfew serum(4)/(3)/(2)
+		// The reported scenario: a potion drunk down to its last dose. Sanfew serum(4)/(3)/(2)
 		// are the spent doses, now unowned placeholders; Sanfew serum(1) is the dose still held.
 		final BankHarness harness = openedHarness();
 		harness.clickTab(1); // Main
@@ -1264,7 +1452,7 @@ public class OverlayScreenshotTest
 	}
 
 	@Test
-	public void bottomBarSearchButtonFocusesTheSearchField()
+	public void bottomBarSearchButtonOpensTheChatboxPrompt()
 	{
 		final BankHarness harness = openedHarness();
 		harness.render();
@@ -1272,9 +1460,11 @@ public class OverlayScreenshotTest
 
 		harness.click(centreOnCanvas(harness, harness.model().searchButtonRect()));
 		harness.render(2);
+		assertTrue("the icon opens RuneLite's chatbox text input", harness.searchPromptOpened());
+		assertTrue(harness.controller().isChatboxInputOpen());
 		assertTrue(harness.model().isSearchFocused());
 
-		harness.type("rune");
+		harness.typeInSearch("rune");
 		harness.render(2);
 		assertEquals("rune", harness.model().getSearch());
 	}
@@ -1430,6 +1620,49 @@ public class OverlayScreenshotTest
 	{
 		final Rectangle r = harness.rectOnCanvas(local);
 		return new Point(r.x + r.width / 2, r.y + r.height / 2);
+	}
+
+	@Test
+	public void twentyTabsWrapTheStripOntoASecondRowAndStayClickable() throws IOException
+	{
+		// Card 34: the tab cap is BankLayout.MAX_TABS, well past the real bank's nine, so the strip
+		// wraps onto extra rows and the window grows downwards instead of clipping tabs away.
+		final BankHarness harness = openedHarness();
+		final int oneRowHeight = harness.render().height;
+		assertEquals(1, harness.model().geometry().getStripRows());
+
+		int icon = 1000;
+		while (harness.layout().getTabs().size() < BankLayout.MAX_TABS)
+		{
+			harness.layout().createTabWith(icon++);
+		}
+		harness.render(2);
+
+		assertEquals(BankLayout.MAX_TABS, harness.layout().getTabs().size());
+		// All + 20 tabs, and no [+] because the cap is reached.
+		assertEquals(BankLayout.MAX_TABS + 1, harness.model().getStripLength());
+		assertEquals(2, harness.model().geometry().getStripRows());
+
+		final Dimension size = harness.render();
+		assertEquals("the window grows by exactly one strip row",
+			oneRowHeight + BankGeometry.TAB_STRIP_H, size.height);
+		assertEquals(BankGeometry.width(BankGeometry.DEFAULT_COLS), size.width);
+
+		final Rectangle strip = harness.model().geometry().tabStrip();
+		for (int i = 0; i < harness.model().getStripLength(); i++)
+		{
+			assertTrue("strip entry " + i + " must stay inside the wrapped strip",
+				strip.contains(harness.model().tabRect(i)));
+		}
+
+		// A tab on the second row is clickable through the real input path, not just hit-testable.
+		final int secondRow = harness.model().geometry().tabsPerRow(harness.model().getStripLength());
+		assertTrue(harness.model().tabRect(secondRow).y > harness.model().tabRect(0).y);
+		harness.clickTab(secondRow);
+		harness.render(2);
+		assertEquals("clicking a wrapped tab must select it", secondRow - 1, harness.model().getActiveTab());
+
+		shoot(harness, "30-twenty-tabs");
 	}
 
 	private static BankHarness openedHarness()

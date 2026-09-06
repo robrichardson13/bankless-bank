@@ -43,38 +43,28 @@ public class BankLayoutTest
 	// ---- custom tab cap ----
 
 	@Test
-	public void createTabAddsUpToEightCustomTabsPlusMain()
+	public void createTabWithAddsUpToEightCustomTabsPlusMain()
 	{
 		for (int i = 1; i < BankLayout.MAX_TABS; i++)
 		{
-			int idx = layout.createTab(1000 + i);
+			int idx = layout.createTabWith(1000 + i);
 			assertEquals(i, idx);
 		}
 		assertEquals(BankLayout.MAX_TABS, layout.getTabs().size());
 	}
 
 	@Test
-	public void createTabReturnsMinusOneWhenTabLimitReached()
+	public void createTabWithReturnsMinusOneWhenTabLimitReached()
 	{
 		for (int i = 1; i < BankLayout.MAX_TABS; i++)
 		{
-			layout.createTab(1000 + i);
+			layout.createTabWith(1000 + i);
 		}
 		assertEquals(BankLayout.MAX_TABS, layout.getTabs().size());
 
-		int result = layout.createTab(9999);
+		int result = layout.createTabWith(9999);
 		assertEquals(-1, result);
 		assertEquals(BankLayout.MAX_TABS, layout.getTabs().size());
-	}
-
-	@Test
-	public void createTabDetachesItemFromItsPreviousTab()
-	{
-		layout.getMainTab().append(5);
-		int idx = layout.createTab(5);
-		assertEquals(1, idx);
-		assertFalse(layout.getMainTab().contains(5));
-		assertEquals(Arrays.asList(5), layout.getTab(idx).itemIds());
 	}
 
 	// ---- add/remove tab ----
@@ -83,7 +73,7 @@ public class BankLayoutTest
 	public void deleteTabAppendsTheDeletedTabsItemsWithoutCarryingItsGaps()
 	{
 		layout.getMainTab().append(1);
-		int idx = layout.createTab(2);
+		int idx = layout.createTabWith(2);
 		layout.getTab(idx).setAt(5, 3);
 
 		layout.deleteTab(idx);
@@ -104,7 +94,7 @@ public class BankLayoutTest
 	@Test
 	public void deleteTabIgnoresTheMainTabRegardlessOfPosition()
 	{
-		layout.createTab(1);
+		layout.createTabWith(1);
 		layout.moveTab(0, layout.getTabs().size() - 1);
 		int mainIndex = layout.indexOfMainTab();
 		layout.getMainTab().append(2);
@@ -122,14 +112,14 @@ public class BankLayoutTest
 		assertEquals(1, layout.getTabs().size());
 	}
 
-	// ---- placeItem: move / swap semantics ----
+	// ---- moveSlot / moveSlotToTab: rewritten from placeItem/moveItemToTab (card 27) -------------
 
 	@Test
-	public void placeItemOnAnEmptySlotMovesTheItemThere()
+	public void moveSlotOnAnEmptySlotMovesTheItemThere()
 	{
 		layout.getMainTab().setAt(0, 1);
 
-		boolean changed = layout.placeItem(1, 0, 5);
+		boolean changed = layout.moveSlot(0, 0, 0, 5);
 
 		assertTrue(changed);
 		assertNull(layout.getMainTab().itemAt(0));
@@ -137,26 +127,13 @@ public class BankLayoutTest
 	}
 
 	@Test
-	public void placeItemOnAnOccupiedSlotSwapsTheTwoItems()
+	public void moveSlotSwapsAcrossTabsWhenNeitherIdWouldDuplicate()
 	{
 		layout.getMainTab().setAt(0, 1);
-		layout.getMainTab().setAt(2, 3);
-
-		boolean changed = layout.placeItem(1, 0, 2);
-
-		assertTrue(changed);
-		assertEquals(Integer.valueOf(3), layout.getMainTab().itemAt(0));
-		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(2));
-	}
-
-	@Test
-	public void placeItemSwapsAcrossTabs()
-	{
-		layout.getMainTab().setAt(0, 1);
-		int other = layout.createTab(10);
+		int other = layout.createTabWith(10);
 		layout.getTab(other).setAt(2, 10);
 
-		boolean changed = layout.placeItem(1, other, 2);
+		boolean changed = layout.moveSlot(0, 0, other, 2);
 
 		assertTrue(changed);
 		assertEquals(Integer.valueOf(10), layout.getMainTab().itemAt(0));
@@ -164,37 +141,13 @@ public class BankLayoutTest
 	}
 
 	@Test
-	public void placeItemOnItsOwnSlotIsANoOp()
-	{
-		layout.getMainTab().setAt(2, 1);
-
-		boolean changed = layout.placeItem(1, 0, 2);
-
-		assertFalse(changed);
-		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(2));
-	}
-
-	@Test
-	public void placeItemFromOutsideAnyTabSendsTheOccupantToTheAppendIndex()
-	{
-		layout.getMainTab().setAt(0, 5);
-
-		boolean changed = layout.placeItem(999, 0, 0);
-
-		assertTrue(changed);
-		assertEquals(Integer.valueOf(999), layout.getMainTab().itemAt(0));
-		assertTrue(layout.getMainTab().contains(5));
-		assertFalse(layout.getMainTab().indexOf(5) == 0);
-	}
-
-	@Test
-	public void placeItemLeavesInteriorGapsUntouched()
+	public void moveSlotLeavesInteriorGapsUntouched()
 	{
 		layout.getMainTab().setAt(0, 1);
 		layout.getMainTab().setAt(2, 2);
 		layout.getMainTab().setAt(4, 3);
 
-		layout.placeItem(1, 0, 6);
+		layout.moveSlot(0, 0, 0, 6);
 
 		assertNull(layout.getMainTab().itemAt(1));
 		assertNull(layout.getMainTab().itemAt(3));
@@ -203,59 +156,20 @@ public class BankLayoutTest
 	}
 
 	@Test
-	public void placeItemIsANoOpForAnOutOfRangeTabOrNegativeSlot()
+	public void moveSlotIsANoOpForAnOutOfRangeTabOrNegativeSlot()
 	{
 		layout.getMainTab().append(1);
 
-		assertFalse(layout.placeItem(1, 5, 0));
-		assertFalse(layout.placeItem(1, 0, -1));
+		assertFalse(layout.moveSlot(0, 0, 5, 0));
+		assertFalse(layout.moveSlot(0, 0, 0, -1));
 	}
 
 	@Test
-	public void placeItemIsANoOpForASlotAtOrAboveMaxSlots()
+	public void moveSlotIsANoOpForASlotAtOrAboveMaxSlots()
 	{
 		layout.getMainTab().append(1);
 
-		assertFalse(layout.placeItem(1, 0, BankTab.MAX_SLOTS));
-	}
-
-	@Test
-	public void placeItemLeavingACustomTabEmptyDeletesIt()
-	{
-		int other = layout.createTab(10);
-
-		layout.placeItem(10, 0, 0);
-
-		assertEquals(1, layout.getTabs().size());
-		assertTrue(layout.getMainTab().contains(10));
-	}
-
-	@Test
-	public void placeItemNeverLeavesAnItemInTwoTabs()
-	{
-		layout.getMainTab().append(1);
-		int other = layout.createTab(10);
-
-		layout.placeItem(1, other, 0);
-
-		int occurrences = 0;
-		for (BankTab tab : layout.getTabs())
-		{
-			occurrences += (int) tab.itemIds().stream().filter(id -> id == 1).count();
-		}
-		assertEquals(1, occurrences);
-	}
-
-	@Test
-	public void moveItemToTabAppendsAfterTheLastOccupiedSlot()
-	{
-		int other = layout.createTab(10);
-		layout.getTab(other).setAt(3, 20);
-		layout.getMainTab().append(1);
-
-		layout.moveItemToTab(1, other);
-
-		assertEquals(Integer.valueOf(1), layout.getTab(other).itemAt(4));
+		assertFalse(layout.moveSlot(0, 0, 0, BankTab.MAX_SLOTS));
 	}
 
 	// ---- moveTab ----
@@ -263,9 +177,9 @@ public class BankLayoutTest
 	@Test
 	public void moveTabReordersCustomTabs()
 	{
-		int a = layout.createTab(1);
-		int b = layout.createTab(2);
-		int c = layout.createTab(3);
+		int a = layout.createTabWith(1);
+		int b = layout.createTabWith(2);
+		int c = layout.createTabWith(3);
 
 		boolean changed = layout.moveTab(a, c);
 
@@ -280,8 +194,8 @@ public class BankLayoutTest
 	@Test
 	public void moveTabCanMoveTheMainTabToTheEnd()
 	{
-		layout.createTab(1);
-		layout.createTab(2);
+		layout.createTabWith(1);
+		layout.createTabWith(2);
 
 		boolean changed = layout.moveTab(0, layout.getTabs().size() - 1);
 
@@ -297,8 +211,8 @@ public class BankLayoutTest
 	@Test
 	public void moveTabMainToEndAndBackRestoresTheOriginalOrder()
 	{
-		int a = layout.createTab(1);
-		int b = layout.createTab(2);
+		int a = layout.createTabWith(1);
+		int b = layout.createTabWith(2);
 
 		layout.moveTab(0, layout.getTabs().size() - 1);
 		int mainIndex = layout.indexOfMainTab();
@@ -314,8 +228,8 @@ public class BankLayoutTest
 	@Test
 	public void moveTabCanDisplaceMainFromIndexZero()
 	{
-		layout.createTab(1);
-		layout.createTab(2);
+		layout.createTabWith(1);
+		layout.createTabWith(2);
 
 		boolean changed = layout.moveTab(2, 0);
 
@@ -329,7 +243,7 @@ public class BankLayoutTest
 	@Test
 	public void appendGoesToTheMainTabWhereverItSitsInTheStrip()
 	{
-		layout.createTab(1);
+		layout.createTabWith(1);
 		layout.moveTab(0, layout.getTabs().size() - 1);
 		int mainIndex = layout.indexOfMainTab();
 
@@ -344,8 +258,8 @@ public class BankLayoutTest
 	@Test
 	public void moveTabClampsAnOutOfRangeTarget()
 	{
-		int a = layout.createTab(1);
-		layout.createTab(2);
+		int a = layout.createTabWith(1);
+		layout.createTabWith(2);
 
 		boolean changed = layout.moveTab(a, 999);
 
@@ -356,8 +270,8 @@ public class BankLayoutTest
 	@Test
 	public void moveTabReturnsFalseWhenTheOrderIsUnchanged()
 	{
-		int a = layout.createTab(1);
-		layout.createTab(2);
+		int a = layout.createTabWith(1);
+		layout.createTabWith(2);
 
 		boolean changed = layout.moveTab(a, a);
 
@@ -369,7 +283,7 @@ public class BankLayoutTest
 	@Test
 	public void setTabIconAcceptsAnyItemInThatTab()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.getTab(tab).append(2);
 
 		boolean changed = layout.setTabIcon(tab, 2);
@@ -381,7 +295,7 @@ public class BankLayoutTest
 	@Test
 	public void setTabIconRejectsAnItemFromAnotherTab()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.getMainTab().append(2);
 
 		boolean changed = layout.setTabIcon(tab, 2);
@@ -393,7 +307,7 @@ public class BankLayoutTest
 	@Test
 	public void setTabIconWithMinusOneClearsBackToTheFirstItem()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.getTab(tab).append(2);
 		layout.setTabIcon(tab, 2);
 
@@ -409,7 +323,7 @@ public class BankLayoutTest
 	@Test
 	public void renameTabSetsTheTrimmedName()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 
 		boolean changed = layout.renameTab(tab, "  Runes  ");
 
@@ -420,7 +334,7 @@ public class BankLayoutTest
 	@Test
 	public void renameTabPersistsOnTheTabItself()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.renameTab(tab, "Runes");
 
 		// A fresh read of the same tab object sees the rename - it is a plain field, no separate store.
@@ -431,7 +345,7 @@ public class BankLayoutTest
 	@Test
 	public void renameTabCapsAtTwentyCharacters()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 
 		layout.renameTab(tab, "This name is definitely longer than twenty characters");
 
@@ -453,7 +367,7 @@ public class BankLayoutTest
 	@Test
 	public void renameCustomTabWithEmptyStringResetsToItsDefaultTabName()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.renameTab(tab, "Runes");
 
 		boolean changed = layout.renameTab(tab, "");
@@ -465,7 +379,7 @@ public class BankLayoutTest
 	@Test
 	public void renameTabIsANoOpWhenTheNameDoesNotActuallyChange()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.renameTab(tab, "Runes");
 
 		boolean changed = layout.renameTab(tab, "Runes");
@@ -571,19 +485,19 @@ public class BankLayoutTest
 	}
 
 	@Test
-	public void normaliseBlanksDuplicateIdsInPlaceRatherThanShiftingLaterSlots()
+	public void normaliseBlanksARepeatedIdWithinOneTabInPlaceRatherThanShiftingLaterSlots()
 	{
+		// Card 27 rewrite of the old normaliseBlanksDuplicateIdsInPlaceRatherThanShiftingLaterSlots:
+		// a cross-tab duplicate is now legal (see normaliseKeepsTheSameIdInTwoDifferentTabs above), so
+		// this asserts the within-tab case only.
 		layout.getMainTab().setAt(0, 1);
 		layout.getMainTab().setAt(2, 2);
-		BankTab dupeTab = new BankTab("Dupe");
-		dupeTab.setAt(0, 2);
-		dupeTab.setAt(1, 3);
-		layout.getTabs().add(dupeTab);
+		layout.getMainTab().setAt(3, 2);
+		layout.getMainTab().setAt(5, 3);
 
 		layout.normalise();
 
-		assertEquals(Arrays.asList(1, null, 2), layout.getMainTab().getSlots());
-		assertEquals(Arrays.asList(null, 3), dupeTab.getSlots());
+		assertEquals(Arrays.asList(1, null, 2, null, null, 3), layout.getMainTab().getSlots());
 	}
 
 	@Test
@@ -661,7 +575,7 @@ public class BankLayoutTest
 	@Test
 	public void normaliseClearsAnIconTheTabNoLongerHolds()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.getTab(tab).append(2);
 		layout.setTabIcon(tab, 2);
 		layout.getTab(tab).removeItem(2);
@@ -711,7 +625,7 @@ public class BankLayoutTest
 	{
 		// Simulates JSON saved before the main flag existed: no tab has it set.
 		layout.getTabs().get(0).setMain(false);
-		layout.createTab(1);
+		layout.createTabWith(1);
 
 		layout.normalise();
 
@@ -722,7 +636,7 @@ public class BankLayoutTest
 	@Test
 	public void normaliseKeepsExactlyOneMainTabWhenCorruptStateFlagsTwo()
 	{
-		layout.createTab(1);
+		layout.createTabWith(1);
 		layout.getTab(1).setMain(true);
 
 		layout.normalise();
@@ -742,7 +656,7 @@ public class BankLayoutTest
 	@Test
 	public void normalisePreservesMainFlagWhenMainIsNotFirst()
 	{
-		layout.createTab(1);
+		layout.createTabWith(1);
 		layout.moveTab(0, 1);
 		int mainIndex = layout.indexOfMainTab();
 
@@ -765,7 +679,7 @@ public class BankLayoutTest
 	@Test
 	public void normaliseReplacesABlankTabNameWithItsDefault()
 	{
-		layout.createTab(1);
+		layout.createTabWith(1);
 		layout.getTab(1).setName("   ");
 
 		layout.normalise();
@@ -814,7 +728,7 @@ public class BankLayoutTest
 	@Test
 	public void syncWithPlaceholdersDisabledRemovesEmptiedCustomTab()
 	{
-		layout.createTab(5);
+		layout.createTabWith(5);
 
 		boolean changed = layout.sync(setOf(), false);
 
@@ -835,7 +749,7 @@ public class BankLayoutTest
 	@Test
 	public void syncDoesNotDuplicateAlreadyPlacedIds()
 	{
-		int other = layout.createTab(5);
+		int other = layout.createTabWith(5);
 
 		boolean changed = layout.sync(setOf(5), true);
 
@@ -890,7 +804,7 @@ public class BankLayoutTest
 	@Test
 	public void releasePlaceholderDeletesTabLeftEmpty()
 	{
-		layout.createTab(5);
+		layout.createTabWith(5);
 
 		layout.releasePlaceholder(5, setOf());
 
@@ -902,7 +816,7 @@ public class BankLayoutTest
 	{
 		layout.getMainTab().append(1);
 		layout.getMainTab().append(2);
-		int other = layout.createTab(3);
+		int other = layout.createTabWith(3);
 		layout.getTab(other).append(4);
 
 		int released = layout.releaseAllPlaceholders(0, setOf());
@@ -917,7 +831,7 @@ public class BankLayoutTest
 	{
 		layout.getMainTab().append(1);
 		layout.getMainTab().append(2);
-		int other = layout.createTab(3);
+		int other = layout.createTabWith(3);
 		layout.getTab(other).append(4);
 
 		int released = layout.releaseAllPlaceholders(-1, setOf(2));
@@ -944,7 +858,7 @@ public class BankLayoutTest
 	@Test
 	public void indexOfTabFindsContainingTab()
 	{
-		int other = layout.createTab(5);
+		int other = layout.createTabWith(5);
 		assertEquals(other, layout.indexOfTab(5));
 		assertEquals(-1, layout.indexOfTab(999));
 	}
@@ -1008,7 +922,7 @@ public class BankLayoutTest
 	{
 		layout.getMainTab().setAt(0, 1);
 		layout.getMainTab().setAt(3, 2);
-		int other = layout.createTab(5);
+		int other = layout.createTabWith(5);
 		layout.getTab(other).setAt(2, 6);
 
 		layout.compactTab(layout.indexOfMainTab(), BankTab.DEFAULT_COLS);
@@ -1047,7 +961,7 @@ public class BankLayoutTest
 	@Test
 	public void addItemTargetsTheGivenTabNotTheMainOne()
 	{
-		int other = layout.createTab(5);
+		int other = layout.createTabWith(5);
 
 		assertTrue(layout.addItem(99, other));
 
@@ -1056,15 +970,17 @@ public class BankLayoutTest
 	}
 
 	@Test
-	public void addItemIsANoOpForAnIdAlreadyInTheLayout()
+	public void addItemToATabThatAlreadyHasItInAnotherTabAddsACopy()
 	{
-		int other = layout.createTab(5);
+		// Card 27 rewrite of the old addItemIsANoOpForAnIdAlreadyInTheLayout: the guard is per-tab
+		// now, so an id elsewhere in the layout no longer blocks adding it to a tab that lacks it -
+		// see addItemNowAddsACopyToATabThatLacksIt for the focused version of this assertion.
+		int other = layout.createTabWith(5);
 
-		assertFalse(layout.addItem(5, layout.indexOfMainTab()));
+		assertTrue(layout.addItem(5, layout.indexOfMainTab()));
 
-		assertEquals(Collections.emptyList(), layout.getMainTab().getSlots());
+		assertEquals(Collections.singletonList(5), layout.getMainTab().getSlots());
 		assertEquals(Collections.singletonList(5), layout.getTab(other).getSlots());
-		assertEquals(other, layout.indexOfTab(5));
 	}
 
 	@Test
@@ -1103,8 +1019,431 @@ public class BankLayoutTest
 		layout.getMainTab().append(1);
 		layout.addItem(99, layout.indexOfMainTab());
 
-		assertTrue(layout.placeItem(99, layout.indexOfMainTab(), 0));
+		int mainIndex = layout.indexOfMainTab();
+		assertTrue(layout.moveSlot(mainIndex, 1, mainIndex, 0));
 
 		assertEquals(Arrays.asList(99, 1), layout.getMainTab().getSlots());
+	}
+
+	// =========================================================================================
+	// Card 27: item duplication
+	// =========================================================================================
+
+	// ---- normalise / JSON compatibility ----
+
+	@Test
+	public void normaliseKeepsTheSameIdInTwoDifferentTabs()
+	{
+		layout.getMainTab().setAt(0, 5);
+		BankTab other = new BankTab("Other");
+		other.setAt(0, 5);
+		layout.getTabs().add(other);
+
+		layout.normalise();
+
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(other.contains(5));
+	}
+
+	@Test
+	public void normaliseBlanksARepeatedIdWithinOneTabInPlace()
+	{
+		layout.getMainTab().setAt(0, 1);
+		layout.getMainTab().setAt(2, 1);
+		layout.getMainTab().setAt(4, 2);
+
+		layout.normalise();
+
+		assertEquals(Arrays.asList(1, null, null, null, 2), layout.getMainTab().getSlots());
+	}
+
+	@Test
+	public void normaliseKeepsThreeCopiesAcrossThreeTabs()
+	{
+		layout.getMainTab().setAt(0, 7);
+		BankTab a = new BankTab("A");
+		a.setAt(0, 7);
+		BankTab b = new BankTab("B");
+		b.setAt(0, 7);
+		layout.getTabs().add(a);
+		layout.getTabs().add(b);
+
+		layout.normalise();
+
+		assertEquals(3, layout.copyCount(7));
+	}
+
+	@Test
+	public void normaliseStillBlanksNonPositiveIds()
+	{
+		layout.getMainTab().getSlots().add(0);
+		layout.getMainTab().getSlots().add(-1);
+		layout.getMainTab().getSlots().add(5);
+
+		layout.normalise();
+
+		assertEquals(Collections.singletonList(5), layout.getMainTab().itemIds());
+	}
+
+	// ---- copy creation ----
+
+	@Test
+	public void copyItemToTabAppendsASecondSlotAndLeavesTheOriginal()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(10);
+
+		int landedAt = layout.copyItemToTab(5, other);
+
+		assertEquals(1, landedAt);
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void copyItemToTabReturnsMinusOneWhenTheTabAlreadyHoldsTheId()
+	{
+		layout.getMainTab().append(5);
+
+		int landedAt = layout.copyItemToTab(5, layout.indexOfMainTab());
+
+		assertEquals(-1, landedAt);
+	}
+
+	@Test
+	public void copyItemToTabReturnsMinusOneForANonPositiveIdOrOutOfRangeTab()
+	{
+		assertEquals(-1, layout.copyItemToTab(0, layout.indexOfMainTab()));
+		assertEquals(-1, layout.copyItemToTab(-5, layout.indexOfMainTab()));
+		assertEquals(-1, layout.copyItemToTab(5, 99));
+	}
+
+	@Test
+	public void copyItemToTabReturnsMinusOneWhenTheTabIsFull()
+	{
+		int other = layout.createTabWith(10);
+		BankTab tab = layout.getTab(other);
+		tab.setAt(tab.maxSlots() - 1, 999);
+
+		int landedAt = layout.copyItemToTab(5, other);
+
+		assertEquals(-1, landedAt);
+	}
+
+	@Test
+	public void copyCountAndTabsContainingReportEveryCopyInStripOrder()
+	{
+		layout.getMainTab().append(5);
+		int a = layout.createTabWith(1);
+		layout.getTab(a).append(5);
+		int b = layout.createTabWith(2);
+		layout.getTab(b).append(5);
+
+		assertEquals(3, layout.copyCount(5));
+		assertEquals(Arrays.asList(layout.indexOfMainTab(), a, b), layout.tabsContaining(5));
+		assertEquals(0, layout.copyCount(999));
+		assertEquals(Collections.emptyList(), layout.tabsContaining(999));
+	}
+
+	@Test
+	public void canCopyToIsFalseForTheTabsAlreadyHoldingTheId()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(10);
+
+		assertFalse(layout.canCopyTo(5, layout.indexOfMainTab()));
+		assertTrue(layout.canCopyTo(5, other));
+		assertFalse(layout.canCopyTo(5, 99));
+	}
+
+	// ---- slot-addressed moves ----
+
+	@Test
+	public void moveSlotMovesOnlyTheAddressedCopy()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+
+		boolean changed = layout.moveSlot(layout.indexOfMainTab(), 0, layout.indexOfMainTab(), 3);
+
+		assertTrue(changed);
+		assertEquals(Integer.valueOf(5), layout.getMainTab().itemAt(3));
+		assertTrue("the other tab's copy is untouched", layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void moveSlotSwapsWithTheOccupantWithinOneTab()
+	{
+		layout.getMainTab().setAt(0, 1);
+		layout.getMainTab().setAt(2, 3);
+
+		boolean changed = layout.moveSlot(0, 0, 0, 2);
+
+		assertTrue(changed);
+		assertEquals(Integer.valueOf(3), layout.getMainTab().itemAt(0));
+		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(2));
+	}
+
+	@Test
+	public void moveSlotRefusesACrossTabMoveIntoATabThatAlreadyHoldsTheId()
+	{
+		layout.getMainTab().setAt(0, 5);
+		int other = layout.createTabWith(5);
+
+		boolean changed = layout.moveSlot(layout.indexOfMainTab(), 0, other, 3);
+
+		assertFalse(changed);
+		assertTrue(layout.getMainTab().contains(5));
+		assertEquals(Integer.valueOf(5), layout.getTab(other).itemAt(0));
+	}
+
+	@Test
+	public void moveSlotRefusesASwapWhoseOccupantWouldDuplicateInTheSourceTab()
+	{
+		// Main holds 1 and 5; other holds 5 at slot 0 and 1 at slot 1. Swapping main's slot 0 (id 1)
+		// with other's slot 1 (id 1) would leave two 1's in "other" - refused. Also try the reverse
+		// direction: swapping main's slot for other's id-5 slot would leave two 5's in main.
+		layout.getMainTab().setAt(0, 1);
+		layout.getMainTab().setAt(1, 5);
+		int other = layout.createTabWith(5);
+		layout.getTab(other).setAt(1, 1);
+
+		boolean changed = layout.moveSlot(layout.indexOfMainTab(), 0, other, 1);
+
+		assertFalse(changed);
+		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(0));
+		assertEquals(Integer.valueOf(1), layout.getTab(other).itemAt(1));
+
+		boolean changed2 = layout.moveSlot(layout.indexOfMainTab(), 1, other, 0);
+
+		assertFalse(changed2);
+		assertEquals(Integer.valueOf(5), layout.getMainTab().itemAt(1));
+		assertEquals(Integer.valueOf(5), layout.getTab(other).itemAt(0));
+	}
+
+	@Test
+	public void moveSlotAllowsASameTabSwapOfADuplicatedId()
+	{
+		layout.getMainTab().setAt(0, 5);
+		layout.getMainTab().setAt(2, 9);
+		int other = layout.createTabWith(5);
+
+		boolean changed = layout.moveSlot(layout.indexOfMainTab(), 0, layout.indexOfMainTab(), 2);
+
+		assertTrue(changed);
+		assertEquals(Integer.valueOf(9), layout.getMainTab().itemAt(0));
+		assertEquals(Integer.valueOf(5), layout.getMainTab().itemAt(2));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void moveSlotIsANoOpOntoItsOwnSlot()
+	{
+		layout.getMainTab().setAt(2, 1);
+
+		boolean changed = layout.moveSlot(0, 2, 0, 2);
+
+		assertFalse(changed);
+		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(2));
+	}
+
+	@Test
+	public void moveSlotIsANoOpForAnEmptySourceSlot()
+	{
+		boolean changed = layout.moveSlot(0, 0, 0, 5);
+
+		assertFalse(changed);
+	}
+
+	@Test
+	public void moveSlotToTabAppendsAndBlanksTheSource()
+	{
+		int other = layout.createTabWith(10);
+		layout.getTab(other).setAt(3, 20);
+		layout.getMainTab().append(1);
+
+		boolean changed = layout.moveSlotToTab(layout.indexOfMainTab(), 0, other);
+
+		assertTrue(changed);
+		assertNull(layout.getMainTab().itemAt(0));
+		assertEquals(Integer.valueOf(1), layout.getTab(other).itemAt(4));
+	}
+
+	@Test
+	public void moveSlotPrunesAnEmptiedNonMainTabButNeverMain()
+	{
+		int other = layout.createTabWith(10);
+
+		boolean changed = layout.moveSlotToTab(other, 0, layout.indexOfMainTab());
+
+		assertTrue(changed);
+		assertEquals(1, layout.getTabs().size());
+		assertTrue(layout.getMainTab().contains(10));
+
+		// Emptying main itself must never prune it.
+		layout.getMainTab().setAt(0, 1);
+		int other2 = layout.createTabWith(2);
+		boolean changed2 = layout.moveSlotToTab(layout.indexOfMainTab(), 0, other2);
+		assertTrue(changed2);
+		assertEquals(2, layout.getTabs().size());
+	}
+
+	// ---- removal ----
+
+	@Test
+	public void removeSlotBlanksOneCopyAndLeavesTheOther()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+
+		boolean changed = layout.removeSlot(layout.indexOfMainTab(), 0);
+
+		assertTrue(changed);
+		assertFalse(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void removeSlotPrunesAnEmptiedNonMainTab()
+	{
+		int other = layout.createTabWith(5);
+
+		boolean changed = layout.removeSlot(other, 0);
+
+		assertTrue(changed);
+		assertEquals(1, layout.getTabs().size());
+	}
+
+	@Test
+	public void releasePlaceholderAtReleasesOneCopyOnly()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+
+		boolean released = layout.releasePlaceholderAt(layout.indexOfMainTab(), 0, setOf());
+
+		assertTrue(released);
+		assertFalse(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void releaseAllPlaceholdersInATabLeavesCopiesInOtherTabs()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+
+		int released = layout.releaseAllPlaceholders(layout.indexOfMainTab(), setOf());
+
+		assertEquals(1, released);
+		assertFalse(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	// ---- tabs ----
+
+	@Test
+	public void createTabFromMovesTheAddressedCopyOnly()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+
+		int newIndex = layout.createTabFrom(layout.indexOfMainTab(), layout.getMainTab().indexOf(5));
+
+		assertTrue(newIndex >= 0);
+		assertFalse(layout.getMainTab().contains(5));
+		assertTrue("the other tab's copy is untouched", layout.getTab(other).contains(5));
+		assertTrue(layout.getTab(newIndex).contains(5));
+	}
+
+	@Test
+	public void createTabWithLeavesEveryExistingCopyInPlace()
+	{
+		layout.getMainTab().append(5);
+
+		int newIndex = layout.createTabWith(5);
+
+		assertTrue(newIndex >= 0);
+		assertTrue("existing copy stays", layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(newIndex).contains(5));
+	}
+
+	@Test
+	public void deleteTabSkipsIdsMainAlreadyHolds()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		layout.getTab(other).append(6);
+
+		layout.deleteTab(other);
+
+		assertEquals(1, layout.getTabs().size());
+		assertEquals(Arrays.asList(5, 6), layout.getMainTab().itemIds());
+	}
+
+	@Test
+	public void deleteTabMergesTheRestAsBefore()
+	{
+		layout.getMainTab().append(1);
+		int other = layout.createTabWith(2);
+		layout.getTab(other).append(3);
+
+		layout.deleteTab(other);
+
+		assertEquals(1, layout.getTabs().size());
+		assertEquals(Arrays.asList(1, 2, 3), layout.getMainTab().itemIds());
+	}
+
+	// ---- unchanged-behaviour guards ----
+
+	@Test
+	public void syncStillDoesNotAppendAnIdAlreadyHeldByAnyTab()
+	{
+		int other = layout.createTabWith(5);
+
+		boolean changed = layout.sync(setOf(5), true);
+
+		assertFalse(changed);
+		assertFalse(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void addItemNowAddsACopyToATabThatLacksIt()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+
+		boolean changed = layout.addItem(5, other);
+
+		assertTrue(changed);
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void addItemStillRefusesASecondSlotInTheSameTab()
+	{
+		layout.getMainTab().append(5);
+
+		boolean changed = layout.addItem(5, layout.indexOfMainTab());
+
+		assertFalse(changed);
+		assertEquals(1, layout.getMainTab().itemCount());
+	}
+
+	@Test
+	public void setTabIconStillOnlyAcceptsAnIdThatTabHolds()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+
+		assertFalse(layout.setTabIcon(other, 5));
+		assertTrue(layout.setTabIcon(layout.indexOfMainTab(), 5));
 	}
 }

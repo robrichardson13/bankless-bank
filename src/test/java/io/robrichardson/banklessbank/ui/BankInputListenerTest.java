@@ -164,50 +164,40 @@ public class BankInputListenerTest
 		assertFalse("nothing to dismiss, so the click belongs to the game", press.isConsumed());
 	}
 
+	/**
+	 * Card 32: search text is typed into RuneLite's chatbox text input, never into a field of ours,
+	 * so a printable keystroke is never ours to take - it belongs to the game (the chatbox, most
+	 * commonly) whatever our window is doing.
+	 */
 	@Test
-	public void keyTypedIsConsumedAndPostedOnlyWhenSearchIsFocused()
+	public void keyTypedIsNeverConsumedOrPosted()
 	{
 		listener.publish(true, new Rectangle(0, 0, 400, 300), false, false);
 		org.mockito.Mockito.when(controller.isOpen()).thenReturn(true);
-		org.mockito.Mockito.when(controller.isSearchFocused()).thenReturn(false);
-
-		KeyEvent unfocused = new KeyEvent(SOURCE, KeyEvent.KEY_TYPED, System.currentTimeMillis(), 0,
-			KeyEvent.VK_UNDEFINED, 'a');
-		listener.keyTyped(unfocused);
-
-		assertFalse(unfocused.isConsumed());
-		verify(controller, never()).post(any());
-
 		org.mockito.Mockito.when(controller.isSearchFocused()).thenReturn(true);
-		KeyEvent focused = new KeyEvent(SOURCE, KeyEvent.KEY_TYPED, System.currentTimeMillis(), 0,
-			KeyEvent.VK_UNDEFINED, 'a');
-		listener.keyTyped(focused);
 
-		assertTrue(focused.isConsumed());
-		verify(controller).post(any());
+		KeyEvent typed = new KeyEvent(SOURCE, KeyEvent.KEY_TYPED, System.currentTimeMillis(), 0,
+			KeyEvent.VK_UNDEFINED, 'a');
+		listener.keyTyped(typed);
+
+		assertFalse(typed.isConsumed());
+		verify(controller, never()).post(any());
 	}
 
+	/** Backspace edited our old search field; with the chatbox prompt it belongs to the game again. */
 	@Test
-	public void backspaceIsConsumedOnlyWhenSearchIsFocused()
+	public void backspaceIsNeverConsumedOrPosted()
 	{
 		listener.publish(true, new Rectangle(0, 0, 400, 300), false, false);
 		org.mockito.Mockito.when(controller.isOpen()).thenReturn(true);
-		org.mockito.Mockito.when(controller.isSearchFocused()).thenReturn(false);
-
-		KeyEvent unfocused = new KeyEvent(SOURCE, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0,
-			KeyEvent.VK_BACK_SPACE, KeyEvent.CHAR_UNDEFINED);
-		listener.keyPressed(unfocused);
-
-		assertFalse(unfocused.isConsumed());
-		verify(controller, never()).post(any());
-
 		org.mockito.Mockito.when(controller.isSearchFocused()).thenReturn(true);
-		KeyEvent focused = new KeyEvent(SOURCE, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0,
-			KeyEvent.VK_BACK_SPACE, KeyEvent.CHAR_UNDEFINED);
-		listener.keyPressed(focused);
 
-		assertTrue(focused.isConsumed());
-		verify(controller).post(any());
+		KeyEvent backspace = new KeyEvent(SOURCE, KeyEvent.KEY_PRESSED, System.currentTimeMillis(), 0,
+			KeyEvent.VK_BACK_SPACE, KeyEvent.CHAR_UNDEFINED);
+		listener.keyPressed(backspace);
+
+		assertFalse(backspace.isConsumed());
+		verify(controller, never()).post(any());
 	}
 
 	/**

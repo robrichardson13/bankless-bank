@@ -24,18 +24,30 @@ import java.awt.Rectangle;
  * right of it; a narrower one scrolls horizontally, which is why the grid has a scrollbar along the
  * bottom as well as down the right.
  *
- * <p>The tab strip holds {@code [All] + 9 tabs + [+]} = 11 buttons. At {@value #DEFAULT_COLS}
- * columns or wider they are all {@value #TAB_W} wide, which is exactly {@link #ITEM_SPRITE_W} so
- * tab icons draw unscaled. Narrower than that the buttons shrink to share the strip evenly (see
- * {@link #tabWidth(int)}), which keeps every tab and the [+] reachable at any width rather than
- * clipping some of them off the right edge.
+ * <p>The tab strip holds {@code [All] + up to MAX_TABS tabs + [+]}. At {@value #TAB_W} wide a button
+ * is exactly {@link #ITEM_SPRITE_W}, so tab icons draw unscaled. More buttons than fit on one row
+ * <i>wrap</i> onto further rows rather than clipping or scrolling: the strip is
+ * {@code stripRows * }{@value #TAB_STRIP_H} tall and every rect below it - the grid, both
+ * scrollbars, the bottom bar and the resize grip - shifts down with it, so the window simply grows.
+ * The strip is capped at {@value #MAX_STRIP_ROWS} rows; only when that cap binds do the buttons fall
+ * back to sharing their row evenly (see {@link #tabWidth(int)}), which is what keeps every tab and
+ * the [+] reachable at the minimum window width rather than pushing some off the right edge.
+ * {@code stripRows} is the geometry's third dimension alongside {@code (cols, rows)}: it is derived
+ * from the strip length by {@link #stripRowsFor(int, int)} and is an input to {@link #of(int, int,
+ * int)}, never recomputed piecemeal by a caller.
  */
 public final class BankGeometry
 {
 	public static final int BORDER = 8;
 	public static final int TITLE_H = 26;
 	public static final int CLOSE_SIZE = 25;
+	/** Height of one row of the tab strip. The strip is {@code stripRows} of these tall. */
 	public static final int TAB_STRIP_H = 40;
+	/**
+	 * Most rows the tab strip may wrap onto. Past this the buttons shrink to share their row instead,
+	 * so a large tab count cannot push the grid off the bottom of the canvas.
+	 */
+	public static final int MAX_STRIP_ROWS = 4;
 	public static final int TAB_W = 36;
 	public static final int TAB_H = 36;
 	/** Floor on a shrunk tab button, so the strip never collapses to slivers. */
@@ -100,17 +112,29 @@ public final class BankGeometry
 
 	private final int cols;
 	private final int rows;
+	private final int stripRows;
 
-	private BankGeometry(int cols, int rows)
+	private BankGeometry(int cols, int rows, int stripRows)
 	{
 		this.cols = cols;
 		this.rows = rows;
+		this.stripRows = stripRows;
 	}
 
-	/** A geometry for this many columns and rows, both clamped to their legal range. */
+	/**
+	 * A geometry for this many columns and rows, both clamped to their legal range, with a
+	 * single-row tab strip. Convenience for the many callers whose tab count cannot wrap.
+	 */
 	public static BankGeometry of(int cols, int rows)
 	{
-		return new BankGeometry(clamp(cols, MIN_COLS, MAX_COLS), clamp(rows, MIN_ROWS, MAX_ROWS));
+		return of(cols, rows, 1);
+	}
+
+	/** A geometry for this many columns, grid rows and tab-strip rows, each clamped. */
+	public static BankGeometry of(int cols, int rows, int stripRows)
+	{
+		return new BankGeometry(clamp(cols, MIN_COLS, MAX_COLS), clamp(rows, MIN_ROWS, MAX_ROWS),
+			clamp(stripRows, 1, MAX_STRIP_ROWS));
 	}
 
 	public static BankGeometry defaults()
@@ -128,6 +152,17 @@ public final class BankGeometry
 		return rows;
 	}
 
+	public int getStripRows()
+	{
+		return stripRows;
+	}
+
+	/** The whole strip's height: one {@value #TAB_STRIP_H} band per wrapped row. */
+	public int stripHeight()
+	{
+		return stripRows * TAB_STRIP_H;
+	}
+
 	// ---- static size maths -------------------------------------------------------------------
 
 	/** Window width for a column count: both borders, the grid and the scrollbar. */
@@ -138,7 +173,13 @@ public final class BankGeometry
 
 	public static int height(int rows)
 	{
-		return chromeHeight() + rows * SLOT_H;
+		return height(rows, 1);
+	}
+
+	/** Window height for a grid row count and a tab strip of {@code stripRows} rows. */
+	public static int height(int rows, int stripRows)
+	{
+		return chromeHeight(stripRows) + rows * SLOT_H;
 	}
 
 	/** Chrome width with no columns at all: both borders and the scrollbar. */
@@ -156,12 +197,40 @@ public final class BankGeometry
 	 */
 	public static int chromeHeight()
 	{
-		return BORDER * 2 + TITLE_H + TAB_STRIP_H + BOTTOM_H;
+		return chromeHeight(1);
+	}
+
+	/** Chrome height with no rows at all, for a tab strip {@code stripRows} rows tall. */
+	public static int chromeHeight(int stripRows)
+	{
+		return BORDER * 2 + TITLE_H + Math.max(1, stripRows) * TAB_STRIP_H + BOTTOM_H;
 	}
 
 	public static Dimension size(int cols, int rows)
 	{
 		return new Dimension(width(cols), height(rows));
+	}
+
+	/** Inner width available to the tab strip at a given window column count. */
+	public static int stripWidth(int cols)
+	{
+		return width(cols) - BORDER * 2;
+	}
+
+	/**
+	 * How many rows the strip needs to show {@code stripLength} buttons at a window of {@code cols}
+	 * columns: as many as it takes to keep every button at its natural {@value #TAB_W}, capped at
+	 * {@value #MAX_STRIP_ROWS}. Past the cap the buttons shrink instead ({@link #tabWidth(int)}).
+	 */
+	public static int stripRowsFor(int cols, int stripLength)
+	{
+		if (stripLength <= 0)
+		{
+			return 1;
+		}
+		int perRow = Math.max(1, stripWidth(clamp(cols, MIN_COLS, MAX_COLS)) / TAB_W);
+		int needed = (stripLength + perRow - 1) / perRow;
+		return clamp(needed, 1, MAX_STRIP_ROWS);
 	}
 
 	/** Columns that a window of this pixel width would have, unclamped. */
@@ -173,7 +242,13 @@ public final class BankGeometry
 	/** Rows that a window of this pixel height would have, unclamped. */
 	public static int rowsForHeight(int pixelHeight)
 	{
-		return Math.round((pixelHeight - chromeHeight()) / (float) SLOT_H);
+		return rowsForHeight(pixelHeight, 1);
+	}
+
+	/** Rows that a window of this pixel height would have with a {@code stripRows}-row strip. */
+	public static int rowsForHeight(int pixelHeight, int stripRows)
+	{
+		return Math.round((pixelHeight - chromeHeight(stripRows)) / (float) SLOT_H);
 	}
 
 	// ---- instance rects ----------------------------------------------------------------------
@@ -185,7 +260,7 @@ public final class BankGeometry
 
 	public int height()
 	{
-		return height(rows);
+		return height(rows, stripRows);
 	}
 
 	public int gridWidth()
@@ -219,7 +294,20 @@ public final class BankGeometry
 
 	public Rectangle tabStrip()
 	{
-		return new Rectangle(BORDER, BORDER + TITLE_H, width() - BORDER * 2, TAB_STRIP_H);
+		return new Rectangle(BORDER, BORDER + TITLE_H, width() - BORDER * 2, stripHeight());
+	}
+
+	/**
+	 * How many buttons sit on each strip row: the strip length spread evenly over
+	 * {@link #getStripRows()} rows, so the last row is the only short one.
+	 */
+	public int tabsPerRow(int stripLength)
+	{
+		if (stripLength <= 0)
+		{
+			return 1;
+		}
+		return Math.max(1, (stripLength + stripRows - 1) / stripRows);
 	}
 
 	/**
@@ -233,24 +321,30 @@ public final class BankGeometry
 		{
 			return TAB_W;
 		}
-		int share = tabStrip().width / stripLength;
+		int share = tabStrip().width / tabsPerRow(stripLength);
 		return clamp(share, MIN_TAB_W, TAB_W);
 	}
 
-	/** 0 = All, 1..n = layout tabs, n+1 = plus. */
+	/**
+	 * 0 = All, 1..n = layout tabs, n+1 = plus, wrapping onto successive strip rows once one row is
+	 * full.
+	 */
 	public Rectangle tabAt(int stripIndex, int stripLength)
 	{
 		Rectangle strip = tabStrip();
 		int w = tabWidth(stripLength);
-		int x = strip.x + stripIndex * w;
-		int y = strip.y + (TAB_STRIP_H - TAB_H) / 2;
+		int perRow = tabsPerRow(stripLength);
+		int row = Math.max(0, stripIndex) / perRow;
+		int col = Math.max(0, stripIndex) % perRow;
+		int x = strip.x + col * w;
+		int y = strip.y + row * TAB_STRIP_H + (TAB_STRIP_H - TAB_H) / 2;
 		return new Rectangle(x, y, w, TAB_H);
 	}
 
 	/** Viewport, excludes the scrollbar. */
 	public Rectangle grid()
 	{
-		int y = BORDER + TITLE_H + TAB_STRIP_H;
+		int y = BORDER + TITLE_H + stripHeight();
 		return new Rectangle(BORDER, y, gridWidth(), rows * SLOT_H);
 	}
 

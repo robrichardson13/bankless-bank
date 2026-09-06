@@ -14,11 +14,26 @@ import lombok.Getter;
  * The player's arrangement of items into tabs and free-floating slots. Exactly one tab is always
  * flagged {@link BankTab#isMain()} and always exists (see {@link #getMainTab()}); it can sit
  * anywhere in {@link #getTabs()} - it is reorderable like any other tab, just never deletable. Up
- * to eight more tabs can be created. Keys are canonical item ids.
+ * to {@link #MAX_TABS} tabs exist in total. Keys are canonical item ids.
  */
 public class BankLayout
 {
-	public static final int MAX_TABS = 9;
+	/**
+	 * Most tabs a layout may hold, the main tab included. The real bank stops at nine; we do not,
+	 * because the tab strip wraps onto extra rows rather than clipping (see {@code BankGeometry}).
+	 *
+	 * <p>Not unlimited, for three reasons. The strip is capped at {@code BankGeometry.MAX_STRIP_ROWS}
+	 * rows, past which buttons shrink towards illegibility. {@link #normalise()} needs a deterministic
+	 * bound to merge a surplus against. And the decisive one: the layout is a single RS-profile config
+	 * value, which always cloud-syncs and is truncated server-side past 262144 bytes, so the largest
+	 * layout the model can express has to stay inside that. A tab holds up to
+	 * {@link BankTab#MAX_SLOTS} ids, which is roughly 9.5KB of JSON, so twenty tabs is about 190KB -
+	 * inside the limit with headroom, where thirty would be about 280KB and could be silently cut off.
+	 * At twenty, the minimum-width window still lays all 22 strip buttons out six to a row over four
+	 * rows at 34px each, close to the natural {@code BankGeometry.TAB_W} and far above
+	 * {@code BankGeometry.MIN_TAB_W}.
+	 */
+	public static final int MAX_TABS = 20;
 
 	@Getter
 	private List<BankTab> tabs = new ArrayList<>();
@@ -94,7 +109,6 @@ public class BankLayout
 			tabs.get(0).setMain(true);
 		}
 
-		Set<Integer> seen = new HashSet<>();
 		for (int t = 0; t < tabs.size(); t++)
 		{
 			BankTab tab = tabs.get(t);
@@ -120,10 +134,13 @@ public class BankLayout
 				slots.remove(slots.size() - 1);
 			}
 
+			// Card 27: uniqueness is per-tab, not per-layout, so the "seen" set is scoped to this tab
+			// alone - the same id may legitimately repeat across different tabs.
+			Set<Integer> seenInTab = new HashSet<>();
 			for (int i = 0; i < slots.size(); i++)
 			{
 				Integer id = slots.get(i);
-				if (id != null && (id <= 0 || !seen.add(id)))
+				if (id != null && (id <= 0 || !seenInTab.add(id)))
 				{
 					slots.set(i, null);
 				}
@@ -210,6 +227,10 @@ public class BankLayout
 		return changed;
 	}
 
+	/**
+	 * The <b>first</b> tab holding this id, or -1. With duplication there may be several - see
+	 * {@link #tabsContaining(int)}.
+	 */
 	public int indexOfTab(int itemId)
 	{
 		for (int i = 0; i < tabs.size(); i++)
@@ -222,65 +243,211 @@ public class BankLayout
 		return -1;
 	}
 
-	/**
-	 * Places an item at an exact slot. If another item already occupies that slot the two swap: the
-	 * occupant moves to the slot the dragged item vacated (in the tab it came from). When the dragged
-	 * item had no previous slot, the occupant is moved to {@code toTab}'s {@link BankTab#appendIndex()}.
-	 * A no-op for an out-of-range tab, a negative slot, a slot at/above the target tab's
-	 * {@link BankTab#maxSlots()}, or a drop onto the item's own slot. Empty custom tabs are pruned afterwards.
-	 *
-	 * @return true when the layout changed
-	 */
-	public boolean placeItem(int itemId, int toTab, int toSlot)
+	/** Number of tabs holding this id: 0, or 1 when it is not duplicated. */
+	public int copyCount(int itemId)
 	{
-		if (toTab < 0 || toTab >= tabs.size() || toSlot < 0 || toSlot >= tabs.get(toTab).maxSlots())
+		return tabsContaining(itemId).size();
+	}
+
+	/** Tab indices holding this id, in strip order. Empty when the id is not in the layout. */
+	public List<Integer> tabsContaining(int itemId)
+	{
+		List<Integer> result = new ArrayList<>();
+		for (int i = 0; i < tabs.size(); i++)
+		{
+			if (tabs.get(i).contains(itemId))
+			{
+				result.add(i);
+			}
+		}
+		return result;
+	}
+
+	/** True when {@code toTab} exists, does not already hold the id, and has room for one more. */
+	public boolean canCopyTo(int itemId, int toTab)
+	{
+		BankTab tab = getTab(toTab);
+		return tab != null && !tab.contains(itemId) && tab.appendIndex() < tab.maxSlots();
+	}
+
+	/**
+	 * Moves the id at {@code (fromTab, fromSlot)} to {@code (toTab, toSlot)}. When the target slot is
+	 * occupied the two swap, the occupant taking the vacated source slot. A no-op (returns false) for
+	 * an out-of-range tab or slot, an empty source slot, a drop onto the source's own slot, or when
+	 * the move would put an id into a tab that already holds another copy of it (see below). Prunes
+	 * emptied non-main tabs.
+	 */
+	public boolean moveSlot(int fromTab, int fromSlot, int toTab, int toSlot)
+	{
+		BankTab from = getTab(fromTab);
+		BankTab to = getTab(toTab);
+		if (from == null || to == null || fromSlot < 0 || fromSlot >= from.getSlots().size()
+			|| toSlot < 0 || toSlot >= to.maxSlots())
 		{
 			return false;
 		}
 
-		BankTab target = tabs.get(toTab);
-		int fromTabIdx = indexOfTab(itemId);
-		BankTab fromTab = fromTabIdx == -1 ? null : tabs.get(fromTabIdx);
-		int fromSlot = fromTab == null ? -1 : fromTab.indexOf(itemId);
-
-		if (fromTab == target && fromSlot == toSlot)
+		Integer itemId = from.itemAt(fromSlot);
+		if (itemId == null)
 		{
 			return false;
 		}
 
-		Integer occupant = target.itemAt(toSlot);
-
-		if (fromTab != null)
+		if (from == to && fromSlot == toSlot)
 		{
-			fromTab.setAt(fromSlot, null);
+			return false;
 		}
 
+		Integer occupant = to.itemAt(toSlot);
+
+		// Card 27: a move can never duplicate an id within one tab. Same-tab moves/swaps can never
+		// break per-tab uniqueness (a permutation of one tab's own slots), so only cross-tab moves are
+		// checked, in both directions for a swap.
+		if (from != to)
+		{
+			if (occupant == null && to.contains(itemId))
+			{
+				return false;
+			}
+			if (occupant != null && (occupant.equals(itemId) || to.contains(itemId) || from.contains(occupant)))
+			{
+				return false;
+			}
+		}
+
+		from.removeAt(fromSlot);
 		if (occupant != null)
 		{
-			if (fromTab != null)
-			{
-				fromTab.setAt(fromSlot, occupant);
-			}
-			else
-			{
-				target.setAt(target.appendIndex(), occupant);
-			}
+			from.setAt(fromSlot, occupant);
 		}
-
-		target.setAt(toSlot, itemId);
+		to.setAt(toSlot, itemId);
 
 		pruneEmptyTabs();
 		return true;
 	}
 
-	/** Places an item at the end of a tab ({@link BankTab#appendIndex()}). */
-	public boolean moveItemToTab(int itemId, int toTab)
+	/**
+	 * Moves the id at {@code (fromTab, fromSlot)} to the end of {@code toTab}
+	 * ({@link BankTab#appendIndex()}). Same duplication refusal as {@link #moveSlot}.
+	 */
+	public boolean moveSlotToTab(int fromTab, int fromSlot, int toTab)
 	{
-		if (toTab < 0 || toTab >= tabs.size())
+		BankTab to = getTab(toTab);
+		if (to == null)
 		{
 			return false;
 		}
-		return placeItem(itemId, toTab, tabs.get(toTab).appendIndex());
+		return moveSlot(fromTab, fromSlot, toTab, to.appendIndex());
+	}
+
+	/**
+	 * Blanks the slot, pruning the tab when it is a non-main tab left empty. This is "remove this
+	 * copy": the id survives in every other tab holding it.
+	 */
+	public boolean removeSlot(int tabIndex, int slotIndex)
+	{
+		BankTab tab = getTab(tabIndex);
+		if (tab == null || !tab.removeAt(slotIndex))
+		{
+			return false;
+		}
+		pruneEmptyTabs();
+		return true;
+	}
+
+	/**
+	 * Adds a second (or third...) slot for an id at the end of {@code toTab}. A no-op returning -1
+	 * for a non-positive id, an out-of-range tab, a tab that already holds the id, or a tab with no
+	 * room ({@link BankTab#maxSlots()}).
+	 *
+	 * @return the slot index the copy landed at, or -1
+	 */
+	public int copyItemToTab(int itemId, int toTab)
+	{
+		if (itemId <= 0)
+		{
+			return -1;
+		}
+		BankTab tab = getTab(toTab);
+		if (tab == null || tab.contains(itemId))
+		{
+			return -1;
+		}
+		int index = tab.appendIndex();
+		if (index >= tab.maxSlots())
+		{
+			return -1;
+		}
+		tab.setAt(index, itemId);
+		return index;
+	}
+
+	/**
+	 * A new tab holding {@code itemId}, leaving every existing copy where it is. Used by a drop of a
+	 * search result onto the plus button, which copies rather than moves.
+	 *
+	 * @return the new tab's index, or -1 at the tab limit
+	 */
+	public int createTabWith(int itemId)
+	{
+		if (itemId <= 0 || tabs.size() >= MAX_TABS)
+		{
+			return -1;
+		}
+		BankTab tab = new BankTab("Tab " + tabs.size());
+		tab.append(itemId);
+		tabs.add(tab);
+		return tabs.indexOf(tab);
+	}
+
+	/**
+	 * A new tab holding the id at {@code (fromTab, fromSlot)}, blanking that slot. Used by a grid drag
+	 * onto the plus button and by the "New tab from <item>" menu row.
+	 *
+	 * @return the new tab's index, or -1 at the tab limit or for an empty source slot
+	 */
+	public int createTabFrom(int fromTab, int fromSlot)
+	{
+		BankTab from = getTab(fromTab);
+		if (from == null || tabs.size() >= MAX_TABS)
+		{
+			return -1;
+		}
+		Integer itemId = from.itemAt(fromSlot);
+		if (itemId == null)
+		{
+			return -1;
+		}
+		from.removeAt(fromSlot);
+		BankTab tab = new BankTab("Tab " + tabs.size());
+		tab.append(itemId);
+		tabs.add(tab);
+		pruneEmptyTabs();
+		return tabs.indexOf(tab);
+	}
+
+	/**
+	 * Blanks the slot if the player does not own the id it holds. The slot-addressed form of
+	 * {@link #releasePlaceholder(int, Set)}; releases one copy only.
+	 */
+	public boolean releasePlaceholderAt(int tabIndex, int slotIndex, Set<Integer> ownedIds)
+	{
+		BankTab tab = getTab(tabIndex);
+		if (tab == null)
+		{
+			return false;
+		}
+		Integer itemId = tab.itemAt(slotIndex);
+		if (itemId == null || ownedIds.contains(itemId))
+		{
+			return false;
+		}
+		tab.removeAt(slotIndex);
+		if (!tab.isMain() && tab.isEmpty())
+		{
+			tabs.remove(tabIndex);
+		}
+		return true;
 	}
 
 	/**
@@ -454,58 +621,24 @@ public class BankLayout
 	 * This is the manual-add path (the bottom bar's item search): until the item is owned it renders
 	 * as an ordinary placeholder, and from then on it drags, moves and releases like anything else.
 	 *
-	 * <p>An id already somewhere in the layout is never added twice - the caller is expected to jump
-	 * to {@link #indexOfTab(int)} instead - and neither is a non-positive id or one that would land
-	 * past the tab's {@link BankTab#maxSlots()}.
+	 * <p>Card 27: the guard is per-tab, not layout-wide - an id already elsewhere in the layout can
+	 * still be added here as a second copy. This is {@link #copyItemToTab(int, int)} in boolean
+	 * clothing; the manual-add entry point is kept as its own method for callers.
 	 *
 	 * @return true when the layout changed
 	 */
 	public boolean addItem(int itemId, int tabIndex)
 	{
-		if (itemId <= 0 || tabIndex < 0 || tabIndex >= tabs.size() || indexOfTab(itemId) != -1)
-		{
-			return false;
-		}
-
-		BankTab tab = tabs.get(tabIndex);
-		int index = tab.appendIndex();
-		if (index >= tab.maxSlots())
-		{
-			return false;
-		}
-
-		tab.setAt(index, itemId);
-		return true;
-	}
-
-	/**
-	 * Creates a new tab holding the given item.
-	 *
-	 * @return the new tab's index, or -1 if the tab limit is reached
-	 */
-	public int createTab(int itemId)
-	{
-		if (tabs.size() >= MAX_TABS)
-		{
-			return -1;
-		}
-
-		int fromTabIdx = indexOfTab(itemId);
-		if (fromTabIdx != -1)
-		{
-			tabs.get(fromTabIdx).removeItem(itemId);
-		}
-
-		BankTab tab = new BankTab("Tab " + tabs.size());
-		tab.append(itemId);
-		tabs.add(tab);
-		pruneEmptyTabs();
-		return tabs.indexOf(tab);
+		return copyItemToTab(itemId, tabIndex) >= 0;
 	}
 
 	/**
 	 * Deletes a custom tab, appending its occupied ids (gaps dropped) to the end of the main tab.
 	 * A no-op for an out-of-range index or the main tab itself, wherever it currently sits.
+	 *
+	 * <p>Card 27: an id main already holds is skipped rather than merged again, which would otherwise
+	 * duplicate it within main - the copy is dropped because main already has one; that is a merge,
+	 * not a loss.
 	 */
 	public void deleteTab(int index)
 	{
@@ -515,33 +648,29 @@ public class BankLayout
 		}
 
 		BankTab tab = tabs.remove(index);
+		BankTab main = getMainTab();
 		for (int id : tab.itemIds())
 		{
-			getMainTab().append(id);
+			if (!main.contains(id))
+			{
+				main.append(id);
+			}
 		}
 	}
 
-	/** Releases a placeholder: blanks its slot if the player does not own it. */
+	/**
+	 * Releases a placeholder: blanks its slot if the player does not own it. Delegates to
+	 * {@link #releasePlaceholderAt(int, int, Set)} on the <b>first</b> tab holding it; only meaningful
+	 * where {@link #copyCount(int)} is 1, since with duplication the other copies are untouched.
+	 */
 	public boolean releasePlaceholder(int itemId, Set<Integer> ownedIds)
 	{
-		if (ownedIds.contains(itemId))
-		{
-			return false;
-		}
-
 		int tabIdx = indexOfTab(itemId);
 		if (tabIdx == -1)
 		{
 			return false;
 		}
-
-		BankTab tab = tabs.get(tabIdx);
-		tab.removeItem(itemId);
-		if (!tab.isMain() && tab.isEmpty())
-		{
-			tabs.remove(tabIdx);
-		}
-		return true;
+		return releasePlaceholderAt(tabIdx, tabs.get(tabIdx).indexOf(itemId), ownedIds);
 	}
 
 	/** Releases every placeholder in a tab (or every tab when index is -1). */

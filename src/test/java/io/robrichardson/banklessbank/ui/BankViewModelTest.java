@@ -2,6 +2,7 @@ package io.robrichardson.banklessbank.ui;
 
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
+import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 
@@ -263,7 +264,7 @@ public class BankViewModelTest
 	public void searchIsScopedToTheActiveTab()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(2);
+		int otherTab = layout.createTabWith(2);
 		layout.getTab(otherTab).append(3);
 
 		model.setSnapshots(Arrays.asList(
@@ -285,7 +286,7 @@ public class BankViewModelTest
 	public void searchOnTheAllTabSpansEveryTab()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(2);
+		int otherTab = layout.createTabWith(2);
 		layout.getTab(otherTab).append(3);
 
 		model.setSnapshots(Arrays.asList(
@@ -409,7 +410,7 @@ public class BankViewModelTest
 	public void byStorageOnALayoutTabOnlyShowsThatTabsItemsGroupedByStorage()
 	{
 		layout.getMainTab().append(1);
-		layout.createTab(2);
+		layout.createTabWith(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Whip", 1)),
 			storage("poh", "POH", item(2, "Logs", 5))));
@@ -436,7 +437,7 @@ public class BankViewModelTest
 	public void byStorageOnALayoutTabOmitsStoragesWithNoMatchingItemsEvenWhenShowEmptyStoragesIsOn()
 	{
 		layout.getMainTab().append(1);
-		layout.createTab(2);
+		layout.createTabWith(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Whip", 1)),
 			storage("poh", "POH", item(2, "Logs", 5)),
@@ -458,7 +459,7 @@ public class BankViewModelTest
 	public void byStorageOnTheAllTabShowsEverythingAcrossAllTabs()
 	{
 		layout.getMainTab().append(1);
-		layout.createTab(2);
+		layout.createTabWith(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Whip", 1)),
 			storage("poh", "POH", item(2, "Logs", 5))));
@@ -494,7 +495,7 @@ public class BankViewModelTest
 	public void byStorageRefiltersWhenTheActiveTabChanges()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(2);
+		int otherTab = layout.createTabWith(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Whip", 1)),
 			storage("poh", "POH", item(2, "Logs", 5))));
@@ -515,7 +516,7 @@ public class BankViewModelTest
 	public void titleValueInByStorageModeOnALayoutTabOnlyCountsThatTabsItems()
 	{
 		layout.getMainTab().append(1);
-		layout.createTab(2);
+		layout.createTabWith(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Whip", 2)),
 			storage("poh", "POH", item(2, "Logs", 3))));
@@ -747,13 +748,13 @@ public class BankViewModelTest
 	@Test
 	public void scrollPositionIsRestoredWhenReturningToATab()
 	{
-		int tabA = layout.createTab(1);
+		int tabA = layout.createTabWith(1);
 		layout.getTab(tabA).append(1);
 		for (int i = 2; i <= 40; i++)
 		{
 			layout.getTab(tabA).append(i);
 		}
-		int tabB = layout.createTab(999);
+		int tabB = layout.createTabWith(999);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
 			itemsOneEach(rangeIds(1, 999)).toArray(new ItemSnapshot[0]))));
 		model.setVisibleRows(3);
@@ -775,8 +776,8 @@ public class BankViewModelTest
 	@Test
 	public void eachTabRemembersItsOwnScrollIndependently()
 	{
-		int tabA = layout.createTab(1);
-		int tabB = layout.createTab(2);
+		int tabA = layout.createTabWith(1);
+		int tabB = layout.createTabWith(2);
 		for (int i = 1; i <= 40; i++)
 		{
 			layout.getTab(tabA).append(i + 1000);
@@ -848,7 +849,7 @@ public class BankViewModelTest
 	@Test
 	public void rememberedScrollIsClampedWhenTheTabHasShrunk()
 	{
-		int tabA = layout.createTab(1);
+		int tabA = layout.createTabWith(1);
 		for (int i = 1; i <= 40; i++)
 		{
 			layout.getTab(tabA).append(i + 1000);
@@ -861,7 +862,7 @@ public class BankViewModelTest
 		model.setScroll(model.getMaxScroll());
 		assertTrue(model.getScroll() > 0);
 
-		int tabB = layout.createTab(2);
+		int tabB = layout.createTabWith(2);
 		model.setActiveTab(tabB);
 		model.rebuild();
 
@@ -880,12 +881,12 @@ public class BankViewModelTest
 	@Test
 	public void scrollMemoryFollowsATabThroughAReorder()
 	{
-		int tabA = layout.createTab(1);
+		int tabA = layout.createTabWith(1);
 		for (int i = 1; i <= 40; i++)
 		{
 			layout.getTab(tabA).append(i + 1000);
 		}
-		int tabB = layout.createTab(2);
+		int tabB = layout.createTabWith(2);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
 			itemsOneEach(rangeIds(1001, 1040)).toArray(new ItemSnapshot[0]))));
 		model.setVisibleRows(3);
@@ -962,7 +963,7 @@ public class BankViewModelTest
 	public void dropOnAnOccupiedCellInAnotherTabSwapsAcrossTabs()
 	{
 		layout.getMainTab().setAt(0, 1);
-		int otherTab = layout.createTab(99);
+		int otherTab = layout.createTabWith(99);
 		layout.getTab(otherTab).setAt(2, 99);
 		model.setSnapshots(Collections.singletonList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(99, "B", 1))));
@@ -1042,7 +1043,7 @@ public class BankViewModelTest
 	public void searchDragDropOnATabButtonAppendsTheItemToTheEndOfThatTab()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(99);
+		int otherTab = layout.createTabWith(99);
 		layout.getTab(otherTab).append(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Whip", 1), item(2, "Sword", 1), item(99, "Other", 1))));
@@ -1059,7 +1060,8 @@ public class BankViewModelTest
 
 		assertEquals(DropTarget.Type.TAB, target.getType());
 		assertEquals(otherTab, target.getTabIndex());
-		assertFalse(layout.getMainTab().contains(1));
+		// Card 27: a search-result drag onto a tab COPIES, so the original stays in Main.
+		assertTrue(layout.getMainTab().contains(1));
 		// Appended after the tab's existing item (2), not swapped into its slot.
 		assertEquals(Integer.valueOf(2), layout.getTab(otherTab).itemAt(layout.getTab(otherTab).indexOf(2)));
 		assertEquals(1, layout.getTab(otherTab).itemAt(layout.getTab(otherTab).appendIndex() - 1).intValue());
@@ -1111,7 +1113,7 @@ public class BankViewModelTest
 	public void searchDragDropOnTheAllButtonCancels()
 	{
 		layout.getMainTab().append(1);
-		layout.createTab(99);
+		layout.createTabWith(99);
 		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "Whip", 1), item(99, "Other", 1))));
 		model.setActiveTab(-1);
 		model.setSearch("whip");
@@ -1144,8 +1146,170 @@ public class BankViewModelTest
 		DropTarget target = model.endDrag(plusButton.x + 1, plusButton.y + 1);
 
 		assertEquals(DropTarget.Type.NEW_TAB, target.getType());
-		assertFalse(layout.getMainTab().contains(1));
+		// Card 27: the plus button also copies for a search-result drag.
+		assertTrue(layout.getMainTab().contains(1));
 		assertTrue(layout.getTab(target.getTabIndex()).contains(1));
+	}
+
+	// ---- drag storage-mode results onto tabs ----
+	//
+	// BY_STORAGE cells are dense and carry tabIndex/indexInTab -1, exactly like search results, so
+	// they follow card 14's rule: the tab strip is the only valid drop target.
+
+	@Test
+	public void storageModeDragCanStartFromAStorageSlot()
+	{
+		layout.getMainTab().append(1);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(0);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		model.beginDrag(dragFrom.x, dragFrom.y);
+
+		assertTrue(model.isDragging());
+		assertEquals(1, model.getDragSlot().getCanonicalId());
+	}
+
+	@Test
+	public void storageModeDragDropOnATabButtonAppendsTheItemToTheEndOfThatTab()
+	{
+		layout.getMainTab().append(1);
+		int otherTab = layout.createTabWith(99);
+		layout.getTab(otherTab).append(2);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
+			item(1, "Whip", 1), item(2, "Sword", 1), item(99, "Other", 1))));
+		model.setActiveTab(0);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		// Strip index: 0 = All, 1 = Main, 2 = otherTab.
+		java.awt.Rectangle otherTabButton = model.tabRect(2);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(otherTabButton.x + 1, otherTabButton.y + 1);
+
+		assertEquals(DropTarget.Type.TAB, target.getType());
+		assertEquals(otherTab, target.getTabIndex());
+		// Card 27: a storage-mode drag onto a tab COPIES too (both paths share endStripOnlyDrag).
+		assertTrue(layout.getMainTab().contains(1));
+		assertEquals(1, layout.getTab(otherTab).itemAt(layout.getTab(otherTab).appendIndex() - 1).intValue());
+	}
+
+	@Test
+	public void storageModeDragDropOnTheMainTabButtonCopiesTheItemToMain()
+	{
+		int otherTab = layout.createTabWith(99);
+		layout.getTab(otherTab).append(1);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
+			item(1, "Whip", 1), item(99, "Other", 1))));
+		model.setActiveTab(otherTab);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		// Strip index 1 = Main.
+		java.awt.Rectangle mainTabButton = model.tabRect(1);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(mainTabButton.x + 1, mainTabButton.y + 1);
+
+		assertEquals(DropTarget.Type.TAB, target.getType());
+		assertEquals(layout.indexOfMainTab(), target.getTabIndex());
+		assertTrue(layout.getMainTab().contains(1));
+		// Card 27: the original copy in the source tab is untouched by a strip-only drag's copy.
+		assertTrue(layout.getTab(otherTab).contains(1));
+	}
+
+	@Test
+	public void storageModeDragDropOntoTheTabTheItemAlreadyLivesInIsANoOp()
+	{
+		layout.getMainTab().append(1);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(0);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		java.awt.Rectangle mainTabButton = model.tabRect(1);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(mainTabButton.x + 1, mainTabButton.y + 1);
+
+		assertEquals(DropTarget.Type.CANCEL, target.getType());
+		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(0));
+	}
+
+	@Test
+	public void storageModeDragDropOnAGridCellCancelsBecauseStorageRowsAreNotRealSlots()
+	{
+		layout.getMainTab().append(1);
+		layout.getMainTab().append(2);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
+			item(1, "Whip", 1), item(2, "Sword", 1))));
+		model.setActiveTab(0);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		java.awt.Rectangle otherCell = model.slotRect(1);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(otherCell.x, otherCell.y);
+
+		assertEquals(DropTarget.Type.CANCEL, target.getType());
+		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(0));
+		assertEquals(Integer.valueOf(2), layout.getMainTab().itemAt(1));
+	}
+
+	@Test
+	public void storageModeDragDropOnTheAllButtonCancels()
+	{
+		layout.getMainTab().append(1);
+		layout.createTabWith(99);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
+			item(1, "Whip", 1), item(99, "Other", 1))));
+		model.setActiveTab(0);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		java.awt.Rectangle allButton = model.tabRect(0);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(allButton.x + 1, allButton.y + 1);
+
+		assertEquals(DropTarget.Type.CANCEL, target.getType());
+		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(0));
+	}
+
+	@Test
+	public void storageModeDragHighlightsOnlyValidTabTargets()
+	{
+		layout.getMainTab().append(1);
+		int otherTab = layout.createTabWith(99);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory",
+			item(1, "Whip", 1), item(99, "Other", 1))));
+		model.setActiveTab(0);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		model.beginDrag(dragFrom.x, dragFrom.y);
+
+		java.awt.Rectangle allButton = model.tabRect(0);
+		java.awt.Rectangle mainButton = model.tabRect(1);
+		java.awt.Rectangle otherButton = model.tabRect(2);
+
+		assertEquals(-1, model.dropTabStripIndex(allButton.x + 1, allButton.y + 1));
+		// Main already holds the item, so it is a no-op and not highlighted.
+		assertEquals(-1, model.dropTabStripIndex(mainButton.x + 1, mainButton.y + 1));
+		assertEquals(2, model.dropTabStripIndex(otherButton.x + 1, otherButton.y + 1));
+		assertTrue(otherTab >= 0);
+		// No grid cell is ever a drop target in storage mode.
+		assertEquals(-1, model.getDropSlotIndex());
 	}
 
 	@Test
@@ -1178,7 +1342,7 @@ public class BankViewModelTest
 		// The overlay paints its tab-drop highlight from this; during a search the All button is not
 		// a valid target (endSearchDrag cancels on it), so it must not light up as though it were.
 		layout.getMainTab().append(1);
-		layout.createTab(99);
+		layout.createTabWith(99);
 		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "Whip", 1), item(99, "Other", 1))));
 		model.setActiveTab(-1);
 		model.setSearch("whip");
@@ -1211,7 +1375,7 @@ public class BankViewModelTest
 	public void searchDragHighlightsARealTargetTabAndThePlusButton()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(99);
+		int otherTab = layout.createTabWith(99);
 		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "Whip", 1), item(99, "Other", 1))));
 		model.setActiveTab(0);
 		model.setSearch("whip");
@@ -1231,7 +1395,7 @@ public class BankViewModelTest
 	public void anOrdinaryDragStillHighlightsTheAllButtonBecauseItMeansMoveToMain()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(99);
+		int otherTab = layout.createTabWith(99);
 		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "Whip", 1), item(99, "Other", 1))));
 		model.setActiveTab(otherTab);
 		model.rebuild();
@@ -1255,10 +1419,10 @@ public class BankViewModelTest
 	}
 
 	@Test
-	public void allTabSearchThenDropOnATabMovesTheItemOutOfItsOriginalTab()
+	public void allTabSearchThenDropOnATabCopiesTheItemIntoIt()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(99);
+		int otherTab = layout.createTabWith(99);
 		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "Whip", 1), item(99, "Other", 1))));
 		model.setActiveTab(-1);
 		model.setSearch("whip");
@@ -1273,7 +1437,8 @@ public class BankViewModelTest
 		model.rebuild();
 
 		assertEquals(DropTarget.Type.TAB, target.getType());
-		assertFalse(layout.getMainTab().contains(1));
+		// Card 27: a search drag COPIES, so the original stays in Main.
+		assertTrue(layout.getMainTab().contains(1));
 		assertTrue(layout.getTab(otherTab).contains(1));
 
 		// The result list still spans every tab (All is still active), but the item's position moved.
@@ -1309,7 +1474,7 @@ public class BankViewModelTest
 	public void endDragOntoTabStripEntryMovesItemToThatTab()
 	{
 		layout.getMainTab().append(1);
-		int otherTab = layout.createTab(99);
+		int otherTab = layout.createTabWith(99);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "A", 1))));
 		model.setActiveTab(0);
 		model.rebuild();
@@ -1410,8 +1575,8 @@ public class BankViewModelTest
 	@Test
 	public void pruningAnEarlierEmptyTabKeepsTheActiveTab()
 	{
-		int tab1 = layout.createTab(1);
-		int tab2 = layout.createTab(2);
+		int tab1 = layout.createTabWith(1);
+		int tab2 = layout.createTabWith(2);
 		model.setSnapshots(Collections.singletonList(
 			storage("carryable", "Inventory", item(1, "AItem", 1), item(2, "BItem", 1))));
 		// The All view is the only way to reach an item in a non-active tab without a search filter
@@ -1448,7 +1613,7 @@ public class BankViewModelTest
 	@Test
 	public void beginTabDragRefusesTheAllTabAndThePlusButtonButAllowsTheMainTab()
 	{
-		layout.createTab(1);
+		layout.createTabWith(1);
 		model.setSnapshots(Collections.emptyList());
 		model.rebuild();
 
@@ -1466,8 +1631,8 @@ public class BankViewModelTest
 	@Test
 	public void dragMainTabToTheEndOfTheStripMovesItThereAndKeepsTheMainFlag()
 	{
-		int a = layout.createTab(1);
-		int b = layout.createTab(2);
+		int a = layout.createTabWith(1);
+		int b = layout.createTabWith(2);
 		model.setSnapshots(Collections.emptyList());
 		model.rebuild();
 
@@ -1487,8 +1652,8 @@ public class BankViewModelTest
 	@Test
 	public void endTabDragReordersTheTabsAndReturnsTabReorder()
 	{
-		int a = layout.createTab(1);
-		int b = layout.createTab(2);
+		int a = layout.createTabWith(1);
+		int b = layout.createTabWith(2);
 		model.setSnapshots(Collections.emptyList());
 		model.rebuild();
 
@@ -1506,8 +1671,8 @@ public class BankViewModelTest
 	@Test
 	public void endTabDragOffTheStripCancelsAndLeavesTheOrderAlone()
 	{
-		layout.createTab(1);
-		layout.createTab(2);
+		layout.createTabWith(1);
+		layout.createTabWith(2);
 		model.setSnapshots(Collections.emptyList());
 		model.rebuild();
 		List<String> before = new ArrayList<>();
@@ -1531,8 +1696,8 @@ public class BankViewModelTest
 	@Test
 	public void theActiveTabFollowsTheTabItWasViewingThroughAReorder()
 	{
-		int a = layout.createTab(1);
-		int b = layout.createTab(2);
+		int a = layout.createTabWith(1);
+		int b = layout.createTabWith(2);
 		model.setSnapshots(Collections.emptyList());
 		model.setActiveTab(a);
 		BankTab aRef = layout.getTab(a);
@@ -1648,7 +1813,7 @@ public class BankViewModelTest
 	@Test
 	public void setTabIconMenuEntryIsOfferedForAnyItemInACustomTab()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.getTab(tab).append(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1))));
@@ -1664,7 +1829,7 @@ public class BankViewModelTest
 	@Test
 	public void activateSetTabIconChangesTheIconWithoutMovingTheItem()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		layout.getTab(tab).append(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1))));
@@ -1686,7 +1851,7 @@ public class BankViewModelTest
 	@Test
 	public void clearTabIconEntryAppearsOnlyWhenAnExplicitIconIsSet()
 	{
-		int tab = layout.createTab(1);
+		int tab = layout.createTabWith(1);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "A", 1))));
 		model.setActiveTab(tab);
 		model.rebuild();
@@ -1765,9 +1930,9 @@ public class BankViewModelTest
 	@Test
 	public void deletingAnEarlierTabKeepsTheSameTabActive()
 	{
-		layout.createTab(1); // tab index 1
-		layout.createTab(2); // tab index 2
-		layout.createTab(3); // tab index 3
+		layout.createTabWith(1); // tab index 1
+		layout.createTabWith(2); // tab index 2
+		layout.createTabWith(3); // tab index 3
 		model.setSnapshots(Collections.singletonList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1), item(3, "C", 1))));
 		model.setActiveTab(3);
@@ -1800,7 +1965,7 @@ public class BankViewModelTest
 	@Test
 	public void deletingTheActiveTabFallsBackToAll()
 	{
-		layout.createTab(1); // tab index 1
+		layout.createTabWith(1); // tab index 1
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "A", 1))));
 		model.setActiveTab(1);
 		model.rebuild();
@@ -1847,7 +2012,7 @@ public class BankViewModelTest
 	@Test
 	public void rightClickOnACustomTabButtonAlsoOffersCollapseBlankSpaces()
 	{
-		int other = layout.createTab(1);
+		int other = layout.createTabWith(1);
 		layout.getTab(other).setAt(3, 2);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1))));
 		model.setActiveTab(other);
@@ -1923,7 +2088,7 @@ public class BankViewModelTest
 	{
 		layout.getMainTab().setAt(0, 1);
 		layout.getMainTab().setAt(3, 2);
-		int other = layout.createTab(3);
+		int other = layout.createTabWith(3);
 		layout.getTab(other).setAt(2, 4);
 		model.setSnapshots(Collections.singletonList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1), item(3, "C", 1), item(4, "D", 1))));
@@ -1960,7 +2125,7 @@ public class BankViewModelTest
 	@Test
 	public void rightClickOnACustomTabButtonAlsoOffersRenameTab()
 	{
-		int other = layout.createTab(1);
+		int other = layout.createTabWith(1);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "A", 1))));
 		model.setActiveTab(other);
 		model.rebuild();
@@ -2066,7 +2231,7 @@ public class BankViewModelTest
 	@Test
 	public void allViewDividerShowsTheRenamedTabsName()
 	{
-		int other = layout.createTab(1);
+		int other = layout.createTabWith(1);
 		layout.getMainTab().append(2);
 		model.renameTab(other, "Runes");
 		model.setSnapshots(Collections.singletonList(
@@ -2102,7 +2267,7 @@ public class BankViewModelTest
 	public void getTotalItemCountSumsOwnedItemsAcrossAllTabsRegardlessOfActiveTab()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2);
+		int other = layout.createTabWith(2);
 		layout.getTab(other).append(3); // placeholder, not owned
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1))));
@@ -2131,7 +2296,7 @@ public class BankViewModelTest
 	public void tabValueSumsQuantityTimesUnitPriceOverOwnedIdsInThatTabOnly()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2); // createTab already places id 2 into the new tab
+		int other = layout.createTabWith(2); // createTab already places id 2 into the new tab
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 3), item(2, "B", 5))));
 		model.setUnitPrices(mapOf(1, 10, 2, 100));
@@ -2156,7 +2321,7 @@ public class BankViewModelTest
 	public void tabValueForAllTabsEqualsTheSumOfEveryTabsValue()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2); // createTab already places id 2 into the new tab
+		int other = layout.createTabWith(2); // createTab already places id 2 into the new tab
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 2), item(2, "B", 3))));
 		model.setUnitPrices(mapOf(1, 5, 2, 7));
@@ -2217,7 +2382,7 @@ public class BankViewModelTest
 	public void slotAtMatchesHitTestAndIsNullOverADividerRow()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2);
+		int other = layout.createTabWith(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1))));
 		model.setActiveTab(-1);
@@ -2237,7 +2402,7 @@ public class BankViewModelTest
 	public void allViewEmitsOneHeaderRowPerNonEmptyTabCarryingItsIconId()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2);
+		int other = layout.createTabWith(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(2, "B", 1))));
 		model.setActiveTab(-1);
@@ -2255,7 +2420,7 @@ public class BankViewModelTest
 	public void allViewSkipsTabsWithNoItems()
 	{
 		layout.getMainTab().append(1);
-		int emptyTab = layout.createTab(2);
+		int emptyTab = layout.createTabWith(2);
 		layout.getTab(emptyTab).removeItem(2);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "A", 1))));
 		model.setActiveTab(-1);
@@ -2281,7 +2446,7 @@ public class BankViewModelTest
 	public void searchingOnTheAllViewRemovesEveryDividerAndClearingRestoresThem()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2);
+		int other = layout.createTabWith(2);
 		layout.getTab(other).append(3);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Abyssal whip", 1), item(2, "Bronze sword", 1), item(3, "Rune whip", 1))));
@@ -2302,7 +2467,7 @@ public class BankViewModelTest
 	public void selectingASpecificTabProducesNoDividers()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2);
+		int other = layout.createTabWith(2);
 		layout.getTab(other).append(3);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(3, "B", 1))));
@@ -2316,7 +2481,7 @@ public class BankViewModelTest
 	public void contentHeightOnTheAllViewAccountsForEveryDividerAndItemRow()
 	{
 		layout.getMainTab().append(1);
-		int other = layout.createTab(2);
+		int other = layout.createTabWith(2);
 		layout.getTab(other).append(3);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "A", 1), item(3, "B", 1))));
@@ -2334,15 +2499,16 @@ public class BankViewModelTest
 	public void getStripLengthCountsAllPlusTabsPlusPlusButtonUnderCap()
 	{
 		assertEquals(3, model.getStripLength()); // All + Main + plus button
-		for (int i = 1; i <= 7; i++)
+		for (int i = 1; i < BankLayout.MAX_TABS - 1; i++)
 		{
-			layout.createTab(1000 + i);
+			layout.createTabWith(1000 + i);
 		}
-		assertEquals(10, model.getStripLength()); // All + 8 tabs + plus (8 < MAX_TABS)
-		layout.createTab(1099); // the ninth tab, reaching MAX_TABS
-		assertEquals(10, model.getStripLength()); // All + 9 tabs, no plus (cap reached)
-		layout.createTab(9999);
-		assertEquals(10, model.getStripLength()); // cap enforced: still 9 tabs, no plus
+		// All + (MAX_TABS - 1) tabs + plus, one short of the cap.
+		assertEquals(BankLayout.MAX_TABS + 1, model.getStripLength());
+		layout.createTabWith(1099); // the last tab, reaching MAX_TABS
+		assertEquals(BankLayout.MAX_TABS + 1, model.getStripLength()); // no plus button at the cap
+		layout.createTabWith(9999);
+		assertEquals(BankLayout.MAX_TABS + 1, model.getStripLength()); // cap enforced, still no plus
 	}
 
 	@Test
@@ -2354,35 +2520,37 @@ public class BankViewModelTest
 		assertEquals(BankGeometry.MAX_ROWS, model.getVisibleRows());
 	}
 
-	// ---- keyboard ----
+	// ---- search input ----
 
+	/**
+	 * Card 31: the search icon toggles. With no filter it asks the caller to open the chatbox
+	 * prompt; with one active it clears the filter instead, which is the only quick way back to an
+	 * unfiltered grid now that the text lives in the chatbox rather than in a field we own.
+	 */
 	@Test
-	public void onCharAppendsPrintableCharactersToSearch()
+	public void clickSearchButtonOpensThePromptWhenNoFilterIsActive()
 	{
-		assertTrue(model.onChar('a'));
-		assertTrue(model.onChar('b'));
-		assertEquals("ab", model.getSearch());
-	}
-
-	@Test
-	public void onCharRejectsControlCharacters()
-	{
-		assertFalse(model.onChar((char) 8));
+		assertTrue(model.clickSearchButton());
 		assertEquals("", model.getSearch());
 	}
 
 	@Test
-	public void onBackspaceRemovesLastCharacter()
+	public void clickSearchButtonClearsAnActiveFilterInsteadOfOpeningThePrompt()
 	{
-		model.setSearch("abc");
-		assertTrue(model.onBackspace());
-		assertEquals("ab", model.getSearch());
+		model.setSearch("rune");
+		model.setSearchFocused(true);
+
+		assertFalse(model.clickSearchButton());
+		assertEquals("", model.getSearch());
+		assertFalse(model.isSearchFocused());
 	}
 
 	@Test
-	public void onBackspaceOnEmptySearchIsNoOp()
+	public void clickSearchButtonOpensThePromptAgainOnceTheFilterIsCleared()
 	{
-		assertFalse(model.onBackspace());
+		model.setSearch("rune");
+		assertFalse(model.clickSearchButton());
+		assertTrue(model.clickSearchButton());
 	}
 
 	@Test
@@ -2531,6 +2699,81 @@ public class BankViewModelTest
 		assertEquals(Integer.valueOf(9), layout.getMainTab().itemAt(10));
 		// Item 16 was (row 1, col 7) and must still be.
 		assertEquals(Integer.valueOf(16), layout.getMainTab().itemAt(1 * 10 + 7));
+	}
+
+	@Test
+	public void gridDragStripHighlightRefusesATabThatAlreadyHoldsTheDraggedId()
+	{
+		layout.getMainTab().append(1);
+		layout.getMainTab().append(2);
+		int other = layout.createTabWith(1); // already holds id 1
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "Whip", 1), item(2, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		final Rectangle from = model.slotRect(0); // id 1, a plain grid drag (no search, TABS mode)
+		model.beginDrag(from.x + 4, from.y + 4);
+
+		final Rectangle otherButton = model.tabRect(other + 1);
+		assertEquals("moveSlotToTab would refuse this, so the strip must not promise it",
+			-1, model.dropTabStripIndex(otherButton.x + 1, otherButton.y + 1));
+
+		// A tab that does not hold the id is still a valid highlight.
+		model.endDrag(from.x + 4, from.y + 4);
+		final Rectangle secondFrom = model.slotRect(1); // id 2
+		model.beginDrag(secondFrom.x + 4, secondFrom.y + 4);
+		assertEquals(other + 1, model.dropTabStripIndex(otherButton.x + 1, otherButton.y + 1));
+	}
+
+	@Test
+	public void aSyncThatPrunesATabClosesAnOpenMenuRatherThanLettingItsSlotArgsGoStale()
+	{
+		// Main holds 1; a custom tab holds only 2. Menu rows carry (tabIndex, slotIndex), so pruning
+		// the custom tab would shift every index under an already-open menu.
+		layout.getMainTab().append(1);
+		int other = layout.createTabWith(2);
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "One", 1), item(2, "Two", 1))));
+		model.setPlaceholdersEnabled(false);
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		model.openMenu(model.slotRect(0).x + 4, model.slotRect(0).y + 4);
+		assertTrue(model.isMenuOpen());
+
+		// Item 2 stops being owned, so sync blanks it and prunes the now-empty custom tab.
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "One", 1))));
+		assertTrue(model.syncLayout());
+		assertNull("the custom tab was pruned", layout.getTab(other));
+		assertFalse("the open menu's slot args are stale, so it closes", model.isMenuOpen());
+	}
+
+	@Test
+	public void draggingAnItemFromASecondRowOntoABeyondWidthCellMovesThatItemNotItsNeighbour()
+	{
+		fillMainTab(16);
+		model.setVisibleCols(12);
+		model.rebuild();
+
+		// Source: (row 1, col 2) of the 8-wide tab = flat slot 10 = id 11.
+		final Rectangle from = model.slotRect(12 + 2);
+		// Target: (row 0, col 9), three columns past the tab's own eight.
+		final int flat = 9;
+		assertTrue(model.getSlots().get(flat).isBeyondWidth());
+		final Rectangle onto = model.slotRect(flat);
+
+		model.beginDrag(from.x + 4, from.y + 4);
+		DropTarget target = model.endDrag(onto.x + 4, onto.y + 4);
+
+		assertEquals(DropTarget.Type.SLOT, target.getType());
+		assertEquals("the tab widened to hold the dropped column", 10, layout.getMainTab().getCols());
+		assertEquals("the item that was dragged is the one that landed",
+			Integer.valueOf(11), layout.getMainTab().itemAt(9));
+		assertEquals("its row-1 neighbour did not move", Integer.valueOf(9), layout.getMainTab().itemAt(10));
+		assertEquals("nor did the next one", Integer.valueOf(10), layout.getMainTab().itemAt(11));
+		assertNull("the source cell is now empty", layout.getMainTab().itemAt(12));
 	}
 
 	@Test
@@ -2692,7 +2935,7 @@ public class BankViewModelTest
 	public void theVerticalScrollbarVisibilityIsPerTab()
 	{
 		fillMainTab(8);
-		final int other = layout.createTab(900);
+		final int other = layout.createTabWith(900);
 		for (int i = 0; i < 56; i++)
 		{
 			layout.getTab(other).setAt(i, 900 + i);
@@ -2748,7 +2991,7 @@ public class BankViewModelTest
 	public void theAllViewsVirtualWidthIsTheWidestTabsWidth()
 	{
 		fillMainTab(8);
-		final int other = layout.createTab(500);
+		final int other = layout.createTabWith(500);
 		layout.getTab(other).setCols(16);
 		layout.getTab(other).setAt(15, 501);
 		model.setSnapshots(Collections.singletonList(new StorageSnapshot("carryable", "Inventory", null,
@@ -2930,7 +3173,7 @@ public class BankViewModelTest
 	@Test
 	public void addItemAppendsToTheActiveTabAsAPlaceholder()
 	{
-		int otherTab = layout.createTab(2);
+		int otherTab = layout.createTabWith(2);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(2, "Two", 1))));
 		model.setActiveTab(otherTab);
 
@@ -2948,7 +3191,7 @@ public class BankViewModelTest
 	@Test
 	public void addItemTargetsTheMainTabWhileTheAllViewIsActive()
 	{
-		int otherTab = layout.createTab(2);
+		int otherTab = layout.createTabWith(2);
 		model.setActiveTab(-1);
 
 		assertTrue(model.addItem(99));
@@ -2959,10 +3202,13 @@ public class BankViewModelTest
 	}
 
 	@Test
-	public void addItemJumpsToAnIdAlreadyInTheLayoutInsteadOfAddingItTwice()
+	public void addItemJumpsInsteadOfAddingATwinWhenTheActiveTabAlreadyHasIt()
 	{
-		int otherTab = layout.createTab(2);
-		model.setActiveTab(layout.indexOfMainTab());
+		// Card 27 rewrite: the old layout-wide guard is gone - addItem now jumps only when the
+		// *active* tab already holds the id (see addItemAddsACopyToTheActiveTabWhenThatTabLacksIt
+		// for the case this replaces, where the id lives in some other tab).
+		int otherTab = layout.createTabWith(2);
+		model.setActiveTab(otherTab);
 
 		assertFalse("nothing changed, so nothing to save", model.addItem(2));
 
@@ -3042,7 +3288,8 @@ public class BankViewModelTest
 		model.addItem(99);
 		model.rebuild();
 
-		assertTrue(layout.placeItem(99, layout.indexOfMainTab(), 0));
+		int mainIndex = layout.indexOfMainTab();
+		assertTrue(layout.moveSlot(mainIndex, layout.getMainTab().indexOf(99), mainIndex, 0));
 
 		assertEquals(Arrays.asList(99, 2, 3, 1), layout.getMainTab().getSlots());
 	}
@@ -3076,7 +3323,7 @@ public class BankViewModelTest
 	public void aTabMenuRowCarriesTheTabNameAsItsOrangeTarget()
 	{
 		layout.getMainTab().append(1);
-		int tabIndex = layout.createTab(2);
+		int tabIndex = layout.createTabWith(2);
 		layout.renameTab(tabIndex, "Runes");
 		model.setSnapshots(Collections.emptyList());
 		model.rebuild();
@@ -3182,6 +3429,841 @@ public class BankViewModelTest
 			menu.getBounds().width);
 	}
 
+	// =========================================================================================
+	// Card 27: item duplication
+	// =========================================================================================
+
+	// ---- menu building ----
+
+	@Test
+	public void itemMenuOffersCopyToAnotherTabWhenSomeTabLacksTheId()
+	{
+		layout.getMainTab().append(5);
+		layout.createTabWith(1); // a tab that lacks id 5
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+
+		int idx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		assertTrue(idx >= 0);
+		ContextMenuEntry entry = model.getMenu().getEntries().get(idx);
+		assertEquals(5, entry.getArg());
+		assertEquals(layout.indexOfMainTab(), entry.getArg2());
+		assertEquals("another tab", entry.getTarget());
+	}
+
+	@Test
+	public void itemMenuOmitsCopyToWhenEveryTabAlreadyHoldsTheId()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+
+		assertEquals(-1, indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU));
+	}
+
+	@Test
+	public void itemMenuOmitsCopyToWithOnlyOneTab()
+	{
+		layout.getMainTab().append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+
+		assertEquals(-1, indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU));
+	}
+
+	@Test
+	public void itemMenuOffersRemoveCopyOnlyWhenTheIdIsDuplicated()
+	{
+		layout.getMainTab().append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		assertEquals(-1, indexOfAction(model.getMenu(), MenuAction.REMOVE_COPY));
+		model.closeMenu();
+
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.openMenu(slot.x, slot.y);
+
+		assertTrue(indexOfAction(model.getMenu(), MenuAction.REMOVE_COPY) >= 0);
+	}
+
+	@Test
+	public void placeholderMenuShowsRemoveCopyInsteadOfReleasePlaceholderWhenDuplicated()
+	{
+		layout.getMainTab().append(5); // unowned - a placeholder
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Collections.emptyList());
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+
+		assertEquals(-1, indexOfAction(model.getMenu(), MenuAction.RELEASE_PLACEHOLDER));
+		int idx = indexOfAction(model.getMenu(), MenuAction.REMOVE_COPY);
+		assertTrue(idx >= 0);
+		ContextMenuEntry entry = model.getMenu().getEntries().get(idx);
+		assertEquals(layout.indexOfMainTab(), entry.getArg());
+		assertEquals(0, entry.getArg2());
+	}
+
+	@Test
+	public void itemMenuOmitsMoveToMainWhenMainAlreadyHoldsTheId()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.setActiveTab(other);
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(1); // slot 0 = id 1, slot 1 = id 5
+		model.openMenu(slot.x, slot.y);
+
+		assertEquals(-1, indexOfAction(model.getMenu(), MenuAction.MOVE_TO_MAIN));
+	}
+
+	@Test
+	public void itemMenuRowsCarryTabAndSlotArgsNotTheItemId()
+	{
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5); // slot 1 in "other"
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.setActiveTab(other);
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(1);
+		model.openMenu(slot.x, slot.y);
+
+		int newTabIdx = indexOfAction(model.getMenu(), MenuAction.NEW_TAB_FROM_ITEM);
+		ContextMenuEntry newTabEntry = model.getMenu().getEntries().get(newTabIdx);
+		assertEquals(other, newTabEntry.getArg());
+		assertEquals(1, newTabEntry.getArg2());
+
+		int moveIdx = indexOfAction(model.getMenu(), MenuAction.MOVE_TO_MAIN);
+		ContextMenuEntry moveEntry = model.getMenu().getEntries().get(moveIdx);
+		assertEquals(other, moveEntry.getArg());
+		assertEquals(1, moveEntry.getArg2());
+
+		int iconIdx = indexOfAction(model.getMenu(), MenuAction.SET_TAB_ICON);
+		ContextMenuEntry iconEntry = model.getMenu().getEntries().get(iconIdx);
+		assertEquals(other, iconEntry.getArg());
+		assertEquals(5, iconEntry.getArg2());
+
+		// Placeholder branch: RELEASE_PLACEHOLDER carries (tabIndex, slotIndex) too.
+		model.closeMenu();
+		layout.getTab(other).append(999); // unowned placeholder at slot 2
+		model.invalidate();
+		model.rebuild();
+		Rectangle placeholderSlot = model.slotRect(2);
+		model.openMenu(placeholderSlot.x, placeholderSlot.y);
+		int releaseIdx = indexOfAction(model.getMenu(), MenuAction.RELEASE_PLACEHOLDER);
+		ContextMenuEntry releaseEntry = model.getMenu().getEntries().get(releaseIdx);
+		assertEquals(other, releaseEntry.getArg());
+		assertEquals(2, releaseEntry.getArg2());
+	}
+
+	@Test
+	public void everyItemMenuFitsTheMinimumWindowHeight()
+	{
+		model.setMaxRows(BankGeometry.MIN_ROWS);
+		model.setVisibleRows(BankGeometry.MIN_ROWS);
+
+		int owner = layout.createTabWith(1);
+		layout.getTab(owner).append(5);
+		layout.setTabIcon(owner, 1);
+		layout.createTabWith(5); // second copy, not main, so the id is duplicated
+		layout.createTabWith(999); // a tab lacking id 5, so "Copy to" is offered
+
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.setActiveTab(owner);
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(1); // id 5 at slot 1
+		model.openMenu(slot.x, slot.y);
+
+		List<ContextMenuEntry> entries = model.getMenu().getEntries();
+		assertEquals(8, entries.size());
+		int minHeight = BankGeometry.height(BankGeometry.MIN_ROWS);
+		assertTrue(BankGeometry.menuHeight(entries.size()) <= minHeight);
+	}
+
+	// ---- two-step copy flow ----
+
+	@Test
+	public void activatingCopyToOpensASecondMenuOfTargetTabs()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1); // lacks 5
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int copyIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		Rectangle copyRect = model.getMenu().entryRect(copyIdx);
+
+		boolean changed = model.activateMenu(copyRect.x, copyRect.y);
+
+		assertFalse("opening the step-2 menu is not itself a mutation", changed);
+		assertTrue(model.isMenuOpen());
+		List<ContextMenuEntry> entries = model.getMenu().getEntries();
+		assertEquals(2, entries.size()); // one target tab + Cancel
+		assertEquals(MenuAction.COPY_TO_TAB, entries.get(0).getAction());
+		assertEquals(other, entries.get(0).getArg());
+		assertEquals(5, entries.get(0).getArg2());
+		assertEquals(MenuAction.CANCEL, entries.get(1).getAction());
+	}
+
+	@Test
+	public void theCopyTargetMenuExcludesTabsAlreadyHoldingTheIdAndTheOwnerTab()
+	{
+		layout.getMainTab().append(5);
+		int already = layout.createTabWith(5);
+		int lacking = layout.createTabWith(1);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int copyIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		Rectangle copyRect = model.getMenu().entryRect(copyIdx);
+		model.activateMenu(copyRect.x, copyRect.y);
+
+		List<Integer> targets = new ArrayList<>();
+		for (ContextMenuEntry e : model.getMenu().getEntries())
+		{
+			if (e.getAction() == MenuAction.COPY_TO_TAB)
+			{
+				targets.add(e.getArg());
+			}
+		}
+		assertEquals(Collections.singletonList(lacking), targets);
+		assertFalse(targets.contains(layout.indexOfMainTab()));
+		assertFalse(targets.contains(already));
+	}
+
+	@Test
+	public void theCopyTargetMenuFitsTheMinimumWindowHeightAtTheTabCap()
+	{
+		model.setMaxRows(BankGeometry.MIN_ROWS);
+		model.setVisibleRows(BankGeometry.MIN_ROWS);
+
+		layout.getMainTab().append(5);
+		for (int i = 1; i < BankLayout.MAX_TABS; i++)
+		{
+			layout.createTabWith(1000 + i);
+		}
+		assertEquals(BankLayout.MAX_TABS, layout.getTabs().size());
+
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int copyIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		Rectangle copyRect = model.getMenu().entryRect(copyIdx);
+		model.activateMenu(copyRect.x, copyRect.y);
+
+		// Card 34: a full target list at the tab cap is taller than the smallest window, so the menu
+		// pages rather than growing - the rows that fit, then "More", then Cancel.
+		List<ContextMenuEntry> entries = model.getMenu().getEntries();
+		assertTrue("the target list must be paged, not clipped",
+			entries.size() <= model.maxMenuEntries());
+		assertEquals(MenuAction.COPY_TO_TAB_PAGE, entries.get(entries.size() - 2).getAction());
+		assertEquals(MenuAction.CANCEL, entries.get(entries.size() - 1).getAction());
+		assertTrue(BankGeometry.menuHeight(entries.size()) <= model.size().height);
+	}
+
+	@Test
+	public void activatingACopyTargetAddsTheCopyAndClosesTheMenu()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int copyIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		Rectangle copyRect = model.getMenu().entryRect(copyIdx);
+		model.activateMenu(copyRect.x, copyRect.y);
+
+		int targetIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB);
+		Rectangle targetRect = model.getMenu().entryRect(targetIdx);
+
+		boolean changed = model.activateMenu(targetRect.x, targetRect.y);
+
+		assertTrue(changed);
+		assertFalse(model.isMenuOpen());
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void cancellingTheCopyTargetMenuChangesNothing()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int copyIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		Rectangle copyRect = model.getMenu().entryRect(copyIdx);
+		model.activateMenu(copyRect.x, copyRect.y);
+
+		int cancelIdx = indexOfAction(model.getMenu(), MenuAction.CANCEL);
+		Rectangle cancelRect = model.getMenu().entryRect(cancelIdx);
+
+		boolean changed = model.activateMenu(cancelRect.x, cancelRect.y);
+
+		assertFalse(changed);
+		assertFalse(model.isMenuOpen());
+		assertFalse(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void activatingCopyToWithNoAvailableTargetLeavesNoMenuOpen()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1); // initially lacks 5, so Copy to appears
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int copyIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		Rectangle copyRect = model.getMenu().entryRect(copyIdx);
+
+		// The only other tab gains the id before the click resolves, so no target remains.
+		layout.getTab(other).append(5);
+
+		boolean changed = model.activateMenu(copyRect.x, copyRect.y);
+
+		assertFalse(changed);
+		assertFalse(model.isMenuOpen());
+	}
+
+	// ---- remove copy ----
+
+	@Test
+	public void removeCopyRemovesOnlyTheClickedCell()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int idx = indexOfAction(model.getMenu(), MenuAction.REMOVE_COPY);
+		Rectangle rect = model.getMenu().entryRect(idx);
+
+		boolean changed = model.activateMenu(rect.x, rect.y);
+
+		assertTrue(changed);
+		assertFalse(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void removeCopyOnTheLastCopyIsNotOffered()
+	{
+		layout.getMainTab().append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+
+		assertEquals(-1, indexOfAction(model.getMenu(), MenuAction.REMOVE_COPY));
+	}
+
+	@Test
+	public void removeCopyThatEmptiesATabKeepsTheActiveTabValid()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(other);
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int idx = indexOfAction(model.getMenu(), MenuAction.REMOVE_COPY);
+		Rectangle rect = model.getMenu().entryRect(idx);
+
+		boolean changed = model.activateMenu(rect.x, rect.y);
+
+		assertTrue(changed);
+		assertEquals(1, layout.getTabs().size());
+		assertEquals(-1, model.getActiveTab());
+	}
+
+	// ---- drag ----
+
+	@Test
+	public void draggingOneCopyMovesOnlyThatCopy()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle from = model.slotRect(0);
+		model.beginDrag(from.x, from.y);
+		Rectangle to = model.slotRect(3);
+		DropTarget result = model.endDrag(to.x, to.y);
+
+		assertEquals(DropTarget.Type.SLOT, result.getType());
+		assertNull(layout.getMainTab().itemAt(0));
+		assertEquals(Integer.valueOf(5), layout.getMainTab().itemAt(3));
+		assertTrue("the other tab's copy is untouched", layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void draggingACopyIntoATabThatAlreadyHoldsTheIdCancels()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle from = model.slotRect(0);
+		model.beginDrag(from.x, from.y);
+		Rectangle otherTabButton = model.tabRect(other + 1);
+
+		DropTarget result = model.endDrag(otherTabButton.x + 1, otherTabButton.y + 1);
+
+		assertEquals(DropTarget.Type.CANCEL, result.getType());
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void droppingACopyOntoItsOwnOtherCopyCancels()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.setActiveTab(-1); // All view: both tabs' grids carry real slots
+		model.rebuild();
+
+		BankSlot mainCopy = null;
+		BankSlot otherCopy = null;
+		for (BankSlot s : model.getSlots())
+		{
+			if (s != null && !s.isEmpty() && s.getCanonicalId() == 5)
+			{
+				if (s.getTabIndex() == layout.indexOfMainTab())
+				{
+					mainCopy = s;
+				}
+				else
+				{
+					otherCopy = s;
+				}
+			}
+		}
+		assertNotNull(mainCopy);
+		assertNotNull(otherCopy);
+
+		int mainIdx = model.getSlots().indexOf(mainCopy);
+		int otherIdx = model.getSlots().indexOf(otherCopy);
+		Rectangle from = model.slotRect(mainIdx);
+		Rectangle to = model.slotRect(otherIdx);
+
+		model.beginDrag(from.x, from.y);
+		DropTarget result = model.endDrag(to.x, to.y);
+
+		assertEquals(DropTarget.Type.CANCEL, result.getType());
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void swappingTwoCellsWithinOneTabStillWorksWhenBothIdsAreDuplicatedElsewhere()
+	{
+		layout.getMainTab().setAt(0, 5);
+		layout.getMainTab().setAt(1, 6);
+		int otherA = layout.createTabWith(5);
+		int otherB = layout.createTabWith(6);
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(5, "A", 1), item(6, "B", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle from = model.slotRect(0);
+		Rectangle to = model.slotRect(1);
+		model.beginDrag(from.x, from.y);
+		DropTarget result = model.endDrag(to.x, to.y);
+
+		assertEquals(DropTarget.Type.SLOT, result.getType());
+		assertEquals(Integer.valueOf(6), layout.getMainTab().itemAt(0));
+		assertEquals(Integer.valueOf(5), layout.getMainTab().itemAt(1));
+		assertTrue(layout.getTab(otherA).contains(5));
+		assertTrue(layout.getTab(otherB).contains(6));
+	}
+
+	@Test
+	public void draggingACopyOntoABeyondWidthCellStillWidensTheTab()
+	{
+		fillMainTab(16);
+		int other = layout.createTabWith(999);
+		layout.getTab(other).append(1); // id 1 duplicated elsewhere
+		model.setVisibleCols(12);
+		model.rebuild();
+
+		final int flat = 12 + 9;
+		assertTrue(model.getSlots().get(flat).isBeyondWidth());
+		final Rectangle from = model.slotRect(0);
+		final Rectangle onto = model.slotRect(flat);
+
+		model.beginDrag(from.x + 4, from.y + 4);
+		DropTarget target = model.endDrag(onto.x + 4, onto.y + 4);
+
+		assertEquals(DropTarget.Type.SLOT, target.getType());
+		assertEquals(10, layout.getMainTab().getCols());
+		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(1 * 10 + 9));
+		assertTrue("the other tab's copy is untouched", layout.getTab(other).contains(1));
+	}
+
+	@Test
+	public void draggingACopyOntoThePlusButtonMovesItIntoTheNewTab()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		Rectangle from = model.slotRect(0);
+		model.beginDrag(from.x, from.y);
+		Rectangle plusButton = model.tabRect(model.getStripLength() - 1);
+		DropTarget target = model.endDrag(plusButton.x + 1, plusButton.y + 1);
+
+		assertEquals(DropTarget.Type.NEW_TAB, target.getType());
+		assertFalse("grid drags move, they do not copy", layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+		assertTrue(layout.getTab(target.getTabIndex()).contains(5));
+	}
+
+	@Test
+	public void dropTabStripIndexRejectsATabThatAlreadyHoldsTheDraggedId()
+	{
+		layout.getMainTab().append(1);
+		int other = layout.createTabWith(1); // already holds the same id
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(0);
+		model.setSearch("whip");
+		model.rebuild();
+
+		Rectangle dragFrom = model.slotRect(0);
+		model.beginDrag(dragFrom.x, dragFrom.y);
+
+		Rectangle otherButton = model.tabRect(other + 1);
+		assertEquals(-1, model.dropTabStripIndex(otherButton.x + 1, otherButton.y + 1));
+	}
+
+	// ---- search ----
+
+	@Test
+	public void searchShowsADuplicatedItemOnceInTheAllView()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.setActiveTab(-1);
+		model.setSearch("rune");
+		model.rebuild();
+
+		long count = model.getSlots().stream().filter(s -> !s.isEmpty() && s.getCanonicalId() == 5).count();
+		assertEquals(1, count);
+	}
+
+	@Test
+	public void searchResultCarriesTheFirstCopysTabAndSlotOrigin()
+	{
+		layout.getMainTab().append(5); // main is first in strip order
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.setActiveTab(-1);
+		model.setSearch("rune");
+		model.rebuild();
+
+		BankSlot result = slotFor(5);
+		assertEquals(layout.indexOfMainTab(), result.getTabIndex());
+		assertEquals(0, result.getIndexInTab());
+	}
+
+	@Test
+	public void draggingASearchResultOntoATabCopiesAndLeavesTheOriginal()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.setSearch("rune");
+		model.rebuild();
+
+		Rectangle from = model.slotRect(0);
+		Rectangle otherButton = model.tabRect(other + 1);
+		model.beginDrag(from.x, from.y);
+		DropTarget target = model.endDrag(otherButton.x + 1, otherButton.y + 1);
+
+		assertEquals(DropTarget.Type.TAB, target.getType());
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void draggingASearchResultOntoTheTabThatAlreadyHoldsItIsANoOp()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.setSearch("rune");
+		model.rebuild();
+
+		Rectangle from = model.slotRect(0);
+		Rectangle mainButton = model.tabRect(layout.indexOfMainTab() + 1);
+		model.beginDrag(from.x, from.y);
+		DropTarget target = model.endDrag(mainButton.x + 1, mainButton.y + 1);
+
+		assertEquals(DropTarget.Type.CANCEL, target.getType());
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+	}
+
+	@Test
+	public void draggingASearchResultOntoThePlusButtonCopiesIntoTheNewTab()
+	{
+		layout.getMainTab().append(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.setSearch("rune");
+		model.rebuild();
+
+		Rectangle from = model.slotRect(0);
+		Rectangle plusButton = model.tabRect(model.getStripLength() - 1);
+		model.beginDrag(from.x, from.y);
+		DropTarget target = model.endDrag(plusButton.x + 1, plusButton.y + 1);
+
+		assertEquals(DropTarget.Type.NEW_TAB, target.getType());
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(target.getTabIndex()).contains(5));
+	}
+
+	// ---- counts, values, rendering ----
+
+	@Test
+	public void totalItemCountCountsADuplicatedOwnedItemOnce()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		layout.getTab(other).append(5);
+		model.setSnapshots(Arrays.asList(storage("carryable", "Inventory", item(1, "A", 1), item(5, "Rune", 1))));
+		model.rebuild();
+
+		assertEquals(2, model.getTotalItemCount());
+	}
+
+	@Test
+	public void totalPlaceholderCountCountsADuplicatedPlaceholderOnce()
+	{
+		layout.getMainTab().append(5); // unowned placeholder
+		layout.createTabWith(5); // a second copy of the same id, also unowned
+		model.setSnapshots(Collections.emptyList());
+		model.rebuild();
+
+		assertEquals(1, model.getTotalPlaceholderCount());
+	}
+
+	@Test
+	public void tabValueOfAllTabsCountsADuplicatedItemOnce()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 10))));
+		model.setUnitPrices(mapOf(5, 100));
+		model.rebuild();
+
+		assertEquals(1000L, model.tabValue(-1));
+	}
+
+	@Test
+	public void perTabValueIsUnchangedByDuplicationElsewhere()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 10))));
+		model.setUnitPrices(mapOf(5, 100));
+		model.rebuild();
+
+		assertEquals(1000L, model.tabValue(layout.indexOfMainTab()));
+		assertEquals(1000L, model.tabValue(other));
+	}
+
+	@Test
+	public void allViewRendersOneCellPerCopyUnderItsOwnTab()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(-1);
+		model.rebuild();
+
+		long count = model.getSlots().stream().filter(s -> !s.isEmpty() && s.getCanonicalId() == 5).count();
+		assertEquals(2, count);
+	}
+
+	@Test
+	public void bothCopiesRenderTheSameQuantityAndPlaceholderState()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 7))));
+		model.setActiveTab(-1);
+		model.rebuild();
+
+		List<BankSlot> copies = new ArrayList<>();
+		for (BankSlot s : model.getSlots())
+		{
+			if (s != null && !s.isEmpty() && s.getCanonicalId() == 5)
+			{
+				copies.add(s);
+			}
+		}
+		assertEquals(2, copies.size());
+		assertEquals(copies.get(0).getQuantity(), copies.get(1).getQuantity());
+		assertEquals(copies.get(0).isPlaceholder(), copies.get(1).isPlaceholder());
+		assertEquals(copies.get(0).getName(), copies.get(1).getName());
+	}
+
+	// ---- manual add ----
+
+	@Test
+	public void addItemAddsACopyToTheActiveTabWhenThatTabLacksIt()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(1);
+		model.setActiveTab(other);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+
+		boolean changed = model.addItem(5);
+
+		assertTrue(changed);
+		assertTrue(layout.getMainTab().contains(5));
+		assertTrue(layout.getTab(other).contains(5));
+		assertEquals(other, model.getActiveTab());
+	}
+
+	@Test
+	public void addItemJumpsWhenTheActiveTabAlreadyHoldsIt()
+	{
+		layout.getMainTab().append(5);
+		model.setActiveTab(layout.indexOfMainTab());
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
+
+		boolean changed = model.addItem(5);
+
+		assertFalse(changed);
+		assertEquals(1, layout.getMainTab().itemCount());
+	}
+
+	@Test
+	public void addItemWithAllActiveTargetsTheMainTab()
+	{
+		layout.createTabWith(1);
+		model.setActiveTab(-1);
+		model.setSnapshots(Collections.emptyList());
+
+		boolean changed = model.addItem(5);
+
+		assertTrue(changed);
+		assertTrue(layout.getMainTab().contains(5));
+	}
+
+	// ---- ignore list ----
+
+	@Test
+	public void ignoringADuplicatedPlaceholderHidesEveryCopy()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		model.setSnapshots(Collections.emptyList());
+		model.setActiveTab(-1);
+		model.rebuild();
+
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x, slot.y);
+		int idx = indexOfAction(model.getMenu(), MenuAction.IGNORE_PLACEHOLDER);
+		Rectangle rect = model.getMenu().entryRect(idx);
+		model.activateMenu(rect.x, rect.y);
+		model.rebuild();
+
+		long count = model.getSlots().stream().filter(s -> !s.isEmpty() && s.getCanonicalId() == 5).count();
+		assertEquals(0, count);
+	}
+
+	@Test
+	public void unignoringShowsEveryCopyAgain()
+	{
+		layout.getMainTab().append(5);
+		int other = layout.createTabWith(5);
+		layout.addPlaceholderIgnore(5);
+		model.setSnapshots(Collections.emptyList());
+		model.setActiveTab(-1);
+		model.rebuild();
+
+		assertEquals(0, model.getSlots().stream().filter(s -> !s.isEmpty() && s.getCanonicalId() == 5).count());
+
+		layout.removePlaceholderIgnore(5);
+		model.invalidate();
+		model.rebuild();
+
+		long count = model.getSlots().stream().filter(s -> !s.isEmpty() && s.getCanonicalId() == 5).count();
+		assertEquals(2, count);
+	}
+
 	/** The rendered slot for an id in the current rows, or fails. */
 	private BankSlot slotFor(int itemId)
 	{
@@ -3193,5 +4275,233 @@ public class BankViewModelTest
 			}
 		}
 		throw new AssertionError("no slot rendered for item " + itemId);
+	}
+
+	// ---- wrapped tab strip (card 34) --------------------------------------------------------
+
+	/** Creates {@code n} extra tabs, each seeded with its own id, and rebuilds. */
+	private void withExtraTabs(int n)
+	{
+		layout.getMainTab().append(1);
+		for (int i = 0; i < n; i++)
+		{
+			layout.createTabWith(2000 + i);
+		}
+		model.setSnapshots(Collections.emptyList());
+		model.rebuild();
+	}
+
+	/** The first strip index on the strip's second row. */
+	private int firstIndexOnSecondRow()
+	{
+		return model.geometry().tabsPerRow(model.getStripLength());
+	}
+
+	@Test
+	public void aStripThatFitsOneRowLeavesTheWindowHeightAlone()
+	{
+		withExtraTabs(3); // All + Main + 3 + plus = 6 buttons
+		assertEquals(1, model.geometry().getStripRows());
+		assertEquals(BankGeometry.height(model.getVisibleRows()), model.size().height);
+	}
+
+	@Test
+	public void theStripWrapsOnceItOverflowsAndTheWindowGrowsByExactlyOneStripRow()
+	{
+		withExtraTabs(3);
+		final int oneRowHeight = model.size().height;
+		final int oneRowGridY = model.gridRect().y;
+
+		withExtraTabs(9); // All + Main + 12 + plus = 15 buttons, more than the 11 one row holds
+		assertEquals(2, model.geometry().getStripRows());
+		assertEquals(oneRowHeight + BankGeometry.TAB_STRIP_H, model.size().height);
+		assertEquals(oneRowGridY + BankGeometry.TAB_STRIP_H, model.gridRect().y);
+		// The grid itself is unchanged: wrapping moves the window's bottom, not its rows.
+		assertEquals(BankGeometry.height(model.getVisibleRows(), 2), model.size().height);
+	}
+
+	@Test
+	public void everyTabButtonStaysInsideTheStripAtTheTabCap()
+	{
+		withExtraTabs(BankLayout.MAX_TABS - 1);
+		assertEquals(BankLayout.MAX_TABS, layout.getTabs().size());
+
+		final Rectangle strip = model.geometry().tabStrip();
+		for (int i = 0; i < model.getStripLength(); i++)
+		{
+			assertTrue("strip entry " + i, strip.contains(model.tabRect(i)));
+		}
+	}
+
+	@Test
+	public void hitTestFindsATabOnTheSecondStripRow()
+	{
+		withExtraTabs(12);
+		final int second = firstIndexOnSecondRow();
+		final Rectangle first = model.tabRect(0);
+		final Rectangle wrapped = model.tabRect(second);
+		assertEquals("the wrapped button must be on the next band down",
+			first.y + BankGeometry.TAB_STRIP_H, wrapped.y);
+		assertEquals(first.x, wrapped.x);
+
+		Hit hit = model.hitTest(wrapped.x + wrapped.width / 2, wrapped.y + wrapped.height / 2);
+		assertEquals(Hit.Type.TAB, hit.getType());
+		assertEquals(second, hit.getIndex());
+	}
+
+	@Test
+	public void thePlusButtonOnAWrappedStripIsStillHitTestedAsThePlusButton()
+	{
+		withExtraTabs(12);
+		final int plus = model.getStripLength() - 1;
+		final Rectangle r = model.tabRect(plus);
+		assertTrue(r.y > model.tabRect(0).y);
+
+		Hit hit = model.hitTest(r.x + r.width / 2, r.y + r.height / 2);
+		assertEquals(Hit.Type.TAB_PLUS, hit.getType());
+		assertEquals(plus, hit.getIndex());
+	}
+
+	@Test
+	public void aTabOnASecondRowStillTakesADroppedItem()
+	{
+		withExtraTabs(12);
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		final int stripIndex = firstIndexOnSecondRow();
+		final int targetTab = stripIndex - 1;
+		final Rectangle from = model.slotRect(0);
+		model.beginDrag(from.x + 1, from.y + 1);
+
+		final Rectangle onto = model.tabRect(stripIndex);
+		assertEquals(stripIndex, model.dropTabStripIndex(onto.x + 1, onto.y + 1));
+		model.endDrag(onto.x + 1, onto.y + 1);
+
+		assertTrue("the item must have moved to the second-row tab",
+			layout.getTab(targetTab).contains(1));
+		assertFalse(layout.getMainTab().contains(1));
+	}
+
+	@Test
+	public void tabDragReorderWorksAcrossStripRows()
+	{
+		withExtraTabs(12);
+		final int stripIndex = firstIndexOnSecondRow();
+		final BankTab dragged = layout.getTab(0);
+
+		model.beginTabDrag(1); // Main, first row
+		assertTrue(model.isTabDragging());
+		final Rectangle onto = model.tabRect(stripIndex);
+		DropTarget target = model.endTabDrag(onto.x + 1, onto.y + 1);
+
+		assertEquals(DropTarget.Type.TAB_REORDER, target.getType());
+		assertEquals("the dragged tab must land at the second-row tab's index",
+			stripIndex - 1, layout.getTabs().indexOf(dragged));
+		assertTrue(dragged.isMain());
+	}
+
+	// ---- paged tab-listing menus (card 34) ---------------------------------------------------
+
+	@Test
+	public void aCopyTargetListThatFitsIsNotPaged()
+	{
+		layout.getMainTab().append(5);
+		layout.createTabWith(1000);
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(5, "Rune", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		openCopyTargetMenu();
+
+		List<ContextMenuEntry> entries = model.getMenu().getEntries();
+		assertEquals(2, entries.size()); // one target tab, then Cancel
+		assertEquals(-1, indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_PAGE));
+	}
+
+	@Test
+	public void theCopyTargetMenuPagesAndItsMoreRowCyclesBackToTheFirstPage()
+	{
+		model.setMaxRows(BankGeometry.MIN_ROWS);
+		model.setVisibleRows(BankGeometry.MIN_ROWS);
+		withExtraTabs(BankLayout.MAX_TABS - 1);
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		openCopyTargetMenu();
+
+		final int max = model.maxMenuEntries();
+		List<ContextMenuEntry> firstPage = new ArrayList<>(model.getMenu().getEntries());
+		assertTrue("a paged menu must still fit the window", firstPage.size() <= max);
+		assertEquals(MenuAction.COPY_TO_TAB_PAGE, firstPage.get(firstPage.size() - 2).getAction());
+
+		// Walk the pages: every page fits, and the targets never repeat until the list wraps.
+		Set<Integer> seen = new LinkedHashSet<>();
+		int pages = 0;
+		List<ContextMenuEntry> page = firstPage;
+		while (pages < 20)
+		{
+			pages++;
+			for (ContextMenuEntry entry : page)
+			{
+				if (entry.getAction() == MenuAction.COPY_TO_TAB)
+				{
+					seen.add(entry.getArg());
+				}
+			}
+			int moreIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_PAGE);
+			Rectangle more = model.getMenu().entryRect(moreIdx);
+			model.activateMenu(more.x + 1, more.y + 1);
+			assertTrue("the More row must reopen the chooser", model.isMenuOpen());
+			page = model.getMenu().getEntries();
+			assertTrue(page.size() <= max);
+			if (page.equals(firstPage))
+			{
+				break;
+			}
+		}
+
+		assertTrue("More must cycle back to the first page", page.equals(firstPage));
+		assertEquals("every tab lacking the item must be reachable across the pages",
+			BankLayout.MAX_TABS - 1, seen.size());
+	}
+
+	@Test
+	public void aPagedCopyTargetRowStillCopiesTheItem()
+	{
+		model.setMaxRows(BankGeometry.MIN_ROWS);
+		model.setVisibleRows(BankGeometry.MIN_ROWS);
+		withExtraTabs(BankLayout.MAX_TABS - 1);
+		model.setSnapshots(Collections.singletonList(
+			storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(layout.indexOfMainTab());
+		model.rebuild();
+
+		openCopyTargetMenu();
+		int idx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB);
+		ContextMenuEntry entry = model.getMenu().getEntries().get(idx);
+		Rectangle row = model.getMenu().entryRect(idx);
+		model.activateMenu(row.x + 1, row.y + 1);
+
+		assertFalse(model.isMenuOpen());
+		assertTrue(layout.getTab(entry.getArg()).contains(1));
+		assertTrue("the original copy stays where it was", layout.getMainTab().contains(1));
+	}
+
+	/** Right-clicks the first slot and steps into the "Copy to / another tab" chooser. */
+	private void openCopyTargetMenu()
+	{
+		Rectangle slot = model.slotRect(0);
+		model.openMenu(slot.x + 1, slot.y + 1);
+		int copyIdx = indexOfAction(model.getMenu(), MenuAction.COPY_TO_TAB_MENU);
+		assertTrue("the item menu must offer a copy step", copyIdx >= 0);
+		Rectangle copyRect = model.getMenu().entryRect(copyIdx);
+		model.activateMenu(copyRect.x + 1, copyRect.y + 1);
+		assertTrue(model.isMenuOpen());
 	}
 }

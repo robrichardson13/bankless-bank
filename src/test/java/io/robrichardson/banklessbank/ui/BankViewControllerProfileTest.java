@@ -24,6 +24,7 @@ import net.runelite.api.ItemComposition;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.game.ItemManager;
 import net.runelite.client.game.chatbox.ChatboxItemSearch;
+import net.runelite.client.game.chatbox.ChatboxPanelManager;
 import net.runelite.client.game.chatbox.ChatboxTextInput;
 import org.junit.Before;
 import org.junit.Test;
@@ -49,6 +50,8 @@ public class BankViewControllerProfileTest
 	@Mock private LayoutStore layoutStore;
 	@Mock(answer = org.mockito.Answers.RETURNS_SELF) private ChatboxItemSearch itemSearch;
 	@Mock(answer = org.mockito.Answers.RETURNS_SELF) private ChatboxTextInput tabRenameInput;
+	@Mock(answer = org.mockito.Answers.RETURNS_SELF) private ChatboxTextInput searchInput;
+	@Mock private ChatboxPanelManager chatboxPanelManager;
 	@Mock private StorageManagerManager storageManagerManager;
 	@Mock private ItemComposition itemComposition;
 
@@ -58,7 +61,7 @@ public class BankViewControllerProfileTest
 	public void setUp()
 	{
 		controller = new BankViewController(plugin, client, itemManager, configManager, config,
-			layoutStore, itemSearch, tabRenameInput);
+			layoutStore, itemSearch, tabRenameInput, searchInput, chatboxPanelManager);
 		controller.startUp();
 
 		when(plugin.getStorageManagerManager()).thenReturn(storageManagerManager);
@@ -259,7 +262,7 @@ public class BankViewControllerProfileTest
 
 		BankLayout saved = new BankLayout();
 		saved.getMainTab().getSlots().add(1);
-		saved.createTab(2);
+		saved.createTabWith(2);
 		when(layoutStore.load(PROFILE)).thenReturn(saved);
 
 		controller.startUp();
@@ -278,7 +281,7 @@ public class BankViewControllerProfileTest
 
 		BankLayout saved = new BankLayout();
 		saved.getMainTab().getSlots().add(1);
-		saved.createTab(2);
+		saved.createTabWith(2);
 		when(plugin.getLoadedProfileKey()).thenReturn(PROFILE);
 		when(layoutStore.load(PROFILE)).thenReturn(saved);
 

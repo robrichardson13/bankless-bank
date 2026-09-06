@@ -400,4 +400,41 @@ public class BankTabTest
 		tab.setAt(tab.maxSlots(), 7);
 		assertTrue(tab.getSlots().isEmpty());
 	}
+
+	// ---- removeAt (card 27) ----
+
+	@Test
+	public void removeAtBlanksThatSlotOnly()
+	{
+		tab.setAt(0, 1);
+		tab.setAt(1, 2);
+		tab.setAt(2, 3);
+
+		boolean removed = tab.removeAt(1);
+
+		assertTrue(removed);
+		assertEquals(Arrays.asList(1, null, 3), tab.getSlots());
+	}
+
+	@Test
+	public void removeAtReturnsFalseForAnEmptyOrOutOfRangeSlot()
+	{
+		tab.setAt(0, 1);
+
+		assertFalse(tab.removeAt(1));
+		assertFalse(tab.removeAt(-1));
+		assertFalse(tab.removeAt(100));
+	}
+
+	@Test
+	public void removeAtTrimsTrailingNulls()
+	{
+		tab.setAt(0, 1);
+		tab.setAt(1, 2);
+
+		boolean removed = tab.removeAt(1);
+
+		assertTrue(removed);
+		assertEquals(Arrays.asList(1), tab.getSlots());
+	}
 }
