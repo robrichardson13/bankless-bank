@@ -13,7 +13,10 @@ repositories {
 	mavenCentral()
 }
 
-def runeLiteVersion = 'latest.release'
+// Pinned to the version in plugin-hub's runelite.version: the hub packager force-overrides every
+// net.runelite dependency to that version anyway, so matching it locally means we compile against
+// exactly what CI compiles against.
+def runeLiteVersion = '1.12.38'
 def pluginMainClass = 'io.robrichardson.banklessbank.BanklessBankPluginTest'
 
 dependencies {
