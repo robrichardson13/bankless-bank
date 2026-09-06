@@ -26,7 +26,6 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import net.runelite.api.Client;
 import net.runelite.api.GameState;
 import net.runelite.client.RuneLite;
-import net.runelite.client.account.SessionManager;
 import net.runelite.client.callback.ClientThread;
 import net.runelite.client.config.ConfigManager;
 import net.runelite.client.ui.ColorScheme;
@@ -52,7 +51,6 @@ public class BanklessBankPanel extends PluginPanel
 	private final Client client;
 	private final ClientThread clientThread;
 	private final ConfigManager configManager;
-	private final SessionManager sessionManager;
 	private final BankViewController controller;
 
 	private final JLabel dwmsStatusLabel = new JLabel();
@@ -75,7 +73,6 @@ public class BanklessBankPanel extends PluginPanel
 		Client client,
 		ClientThread clientThread,
 		ConfigManager configManager,
-		SessionManager sessionManager,
 		BankViewController controller)
 	{
 		this.plugin = plugin;
@@ -84,7 +81,6 @@ public class BanklessBankPanel extends PluginPanel
 		this.client = client;
 		this.clientThread = clientThread;
 		this.configManager = configManager;
-		this.sessionManager = sessionManager;
 		this.controller = controller;
 
 		setLayout(new BorderLayout());
@@ -137,6 +133,12 @@ public class BanklessBankPanel extends PluginPanel
 
 		content.add(new JSeparator());
 
+		// Stated as a condition, not a state. Reading whether the player is signed in would mean
+		// touching net.runelite.client.account (SessionManager#getAccountSession), and the plugin
+		// hub packager bans that whole package outright - it is on its disallowed-apis list, with no
+		// replacement offered, so a plugin simply cannot observe RuneLite login state.
+		syncLabel.setText("<html>Cloud sync: bank layout and tracked items sync automatically while "
+			+ "you are signed in to a RuneLite account. Not signed in? Use Export/Import below.</html>");
 		syncLabel.setForeground(Color.LIGHT_GRAY);
 		syncLabel.setToolTipText("<html>Bank layout and tracked items always sync with a signed-in RuneLite "
 			+ "account. Window position, size and plugin settings additionally need the active RuneLite "
@@ -382,11 +384,6 @@ public class BanklessBankPanel extends PluginPanel
 		boolean enabled = client.getGameState() == GameState.LOGGED_IN && !importer.isImporting();
 		fillGapsButton.setEnabled(enabled);
 		overwriteButton.setEnabled(enabled);
-
-		boolean signedIn = sessionManager.getAccountSession() != null;
-		syncLabel.setText(signedIn
-			? "<html>Cloud sync: on — bank layout and tracked items sync automatically.</html>"
-			: "<html>Cloud sync: off — sign in to a RuneLite account, or use Export/Import below.</html>");
 
 		clientThread.invoke(() ->
 		{
