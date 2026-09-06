@@ -1,0 +1,193 @@
+/*
+ * Ported from "Dude, Where's My Stuff?" by Thource (https://github.com/Thource/dude-wheres-my-stuff)
+ * Copyright (c) 2022, Thource. Licensed under the BSD 2-Clause License.
+ *
+ * Bankless Bank changes: removed Swing tab panels, preview mode and the Item Identification
+ * plugin dependency. updateStorages() now notifies the plugin that tracked data changed.
+ */
+package io.robrichardson.banklessbank.tracking;
+
+import com.google.inject.Inject;
+import io.robrichardson.banklessbank.BanklessBankPlugin;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.stream.Collectors;
+import lombok.Getter;
+import net.runelite.api.Client;
+import net.runelite.api.events.ActorDeath;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameObjectSpawned;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.ItemDespawned;
+import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.events.WidgetLoaded;
+import net.runelite.client.callback.ClientThread;
+import net.runelite.client.config.ConfigManager;
+import net.runelite.client.game.ItemManager;
+
+/**
+ * StorageManager manages Storages that are assigned to it, it passes on RuneLite events so that the
+ * Storages can do their jobs.
+ */
+public abstract class StorageManager<T extends StorageType, S extends Storage<T>> {
+
+  @Getter protected final List<S> storages = new ArrayList<>();
+  protected final BanklessBankPlugin plugin;
+  @Inject protected Client client;
+  @Inject protected ItemManager itemManager;
+  @Getter @Inject protected ConfigManager configManager;
+  @Getter @Inject protected ClientThread clientThread;
+  @Getter protected boolean enabled = true;
+
+  protected StorageManager(BanklessBankPlugin plugin) {
+    this.plugin = plugin;
+  }
+
+  public long getTotalValue() {
+    return storages.stream().filter(Storage::isWithdrawable).mapToLong(Storage::getTotalValue)
+        .sum();
+  }
+
+  /** Called with the storages whose contents changed. Notifies the plugin so the view redraws. */
+  public void updateStorages(List<? extends S> storages) {
+    if (!storages.isEmpty()) {
+      plugin.storagesChanged();
+    }
+  }
+
+  /** Pass onGameTick through to enabled storages. */
+  public void onGameTick() {
+    if (enabled) {
+      updateStorages(
+          storages.stream()
+              .filter(storage -> storage.isEnabled() && storage.onGameTick())
+              .collect(Collectors.toList()));
+    }
+  }
+
+  /** Pass onGameObjectSpawned through to enabled storages. */
+  public void onGameObjectSpawned(GameObjectSpawned gameObjectSpawned) {
+    if (enabled) {
+      updateStorages(
+          storages.stream()
+              .filter(storage -> storage.isEnabled() && storage.onGameObjectSpawned(gameObjectSpawned))
+              .collect(Collectors.toList()));
+    }
+  }
+
+  /** Pass onWidgetLoaded through to enabled storages. */
+  public void onWidgetLoaded(WidgetLoaded widgetLoaded) {
+    if (enabled) {
+      updateStorages(
+          storages.stream()
+              .filter(storage -> storage.isEnabled() && storage.onWidgetLoaded(widgetLoaded))
+              .collect(Collectors.toList()));
+    }
+  }
+
+  /** Pass onWidgetClosed through to enabled storages. */
+  public void onWidgetClosed(WidgetClosed widgetClosed) {
+    if (enabled) {
+      storages.stream().filter(Storage::isEnabled)
+          .forEach(storage -> storage.onWidgetClosed(widgetClosed));
+    }
+  }
+
+  /** Pass onVarbitChanged through to enabled storages. */
+  public void onVarbitChanged(VarbitChanged varbitChanged) {
+    if (enabled) {
+      updateStorages(
+          storages.stream()
+              .filter(storage -> storage.isEnabled() && storage.onVarbitChanged(varbitChanged))
+              .collect(Collectors.toList()));
+    }
+  }
+
+  /** Pass onItemContainerChanged through to enabled storages. */
+  public void onItemContainerChanged(ItemContainerChanged itemContainerChanged) {
+    if (enabled) {
+      updateStorages(
+          storages.stream()
+              .filter(
+                  storage ->
+                      storage.isEnabled() && storage.onItemContainerChanged(itemContainerChanged))
+              .collect(Collectors.toList()));
+    }
+  }
+
+  public void onGameStateChanged(GameStateChanged gameStateChanged) {
+  }
+
+  public void onActorDeath(ActorDeath actorDeath) {
+  }
+
+  public void reset() {
+    storages.forEach(Storage::reset);
+    enable();
+  }
+
+  public abstract String getConfigKey();
+
+  /**
+   * Save all Storages.
+   *
+   * @param profileKey the profile key to save the storages with
+   */
+  public void save(String profileKey) {
+    if (!enabled) {
+      return;
+    }
+
+    storages.forEach(storage -> storage.save(configManager, profileKey, getConfigKey()));
+  }
+
+  /** Load all Storages. */
+  public void load(String profileKey) {
+    if (!enabled || profileKey == null) {
+      return;
+    }
+
+    storages.forEach(storage -> storage.load(configManager, getConfigKey(), profileKey));
+  }
+
+  /** Per-tick bookkeeping hook (see {@link Storage#softUpdate()}). */
+  public void softUpdate() {
+    if (enabled) {
+      storages.forEach(Storage::softUpdate);
+    }
+  }
+
+  public void disable() {
+    enabled = false;
+  }
+
+  public void enable() {
+    enabled = true;
+  }
+
+  public void onItemDespawned(ItemDespawned itemDespawned) {
+  }
+
+  /** Pass onChatMessage through to enabled storages. */
+  public void onChatMessage(ChatMessage chatMessage) {
+    if (enabled) {
+      updateStorages(
+          storages.stream()
+              .filter(storage -> storage.isEnabled() && storage.onChatMessage(chatMessage))
+              .collect(Collectors.toList()));
+    }
+  }
+
+  /** Pass onMenuOptionClicked through to enabled storages. */
+  public void onMenuOptionClicked(MenuOptionClicked menuOption) {
+    if (enabled) {
+      updateStorages(
+          storages.stream()
+              .filter(storage -> storage.isEnabled() && storage.onMenuOptionClicked(menuOption))
+              .collect(Collectors.toList()));
+    }
+  }
+}

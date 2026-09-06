@@ -1,0 +1,163 @@
+/*
+ * Ported from "Dude, Where's My Stuff?" by Thource (https://github.com/Thource/dude-wheres-my-stuff)
+ * Copyright (c) 2022, Thource. Licensed under the BSD 2-Clause License.
+ */
+package io.robrichardson.banklessbank.tracking.playerownedhouse;
+
+import com.google.inject.Inject;
+import io.robrichardson.banklessbank.BanklessBankPlugin;
+import io.robrichardson.banklessbank.tracking.Region;
+import io.robrichardson.banklessbank.tracking.StorageManager;
+import lombok.extern.slf4j.Slf4j;
+import net.runelite.api.coords.WorldPoint;
+import net.runelite.api.events.ActorDeath;
+import net.runelite.api.events.ChatMessage;
+import net.runelite.api.events.GameObjectSpawned;
+import net.runelite.api.events.GameStateChanged;
+import net.runelite.api.events.ItemContainerChanged;
+import net.runelite.api.events.ItemDespawned;
+import net.runelite.api.events.MenuOptionClicked;
+import net.runelite.api.events.VarbitChanged;
+import net.runelite.api.events.WidgetClosed;
+import net.runelite.api.events.WidgetLoaded;
+
+/** PlayerOwnedHouseStorageManager is responsible for managing all PlayerOwnedHouseStorages. */
+@Slf4j
+public class PlayerOwnedHouseStorageManager
+    extends StorageManager<PlayerOwnedHouseStorageType, PlayerOwnedHouseStorage> {
+
+  @Inject
+  private PlayerOwnedHouseStorageManager(BanklessBankPlugin plugin) {
+    super(plugin);
+
+    for (PlayerOwnedHouseStorageType type : PlayerOwnedHouseStorageType.values()) {
+      if (type == PlayerOwnedHouseStorageType.MENAGERIE
+          || type == PlayerOwnedHouseStorageType.CAPE_HANGER
+          || type == PlayerOwnedHouseStorageType.SPICE_RACK
+          || type == PlayerOwnedHouseStorageType.UNCATEGORISED) {
+        continue;
+      }
+
+      storages.add(new PlayerOwnedHouseStorage(type, plugin));
+    }
+
+    storages.add(new CapeHanger(plugin));
+    storages.add(new Menagerie(plugin));
+    storages.add(new SpiceRack(plugin));
+    storages.add(new Uncategorised(plugin));
+  }
+
+  private boolean notInHouse() {
+    if (client.getLocalPlayer() == null) {
+      return true;
+    }
+
+    WorldPoint worldPoint = WorldPoint.fromLocalInstance(client,
+        client.getLocalPlayer().getLocalLocation());
+    return Region.get(worldPoint.getRegionID()) != Region.REGION_POH;
+  }
+
+  @Override
+  public void onChatMessage(ChatMessage chatMessage) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onChatMessage(chatMessage);
+  }
+
+  @Override
+  public void onActorDeath(ActorDeath actorDeath) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onActorDeath(actorDeath);
+  }
+
+  @Override
+  public void onGameObjectSpawned(GameObjectSpawned gameObjectSpawned) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onGameObjectSpawned(gameObjectSpawned);
+  }
+
+  @Override
+  public void onGameStateChanged(GameStateChanged gameStateChanged) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onGameStateChanged(gameStateChanged);
+  }
+
+  @Override
+  public void onGameTick() {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onGameTick();
+  }
+
+  @Override
+  public void onItemContainerChanged(ItemContainerChanged itemContainerChanged) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onItemContainerChanged(itemContainerChanged);
+  }
+
+  @Override
+  public void onItemDespawned(ItemDespawned itemDespawned) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onItemDespawned(itemDespawned);
+  }
+
+  @Override
+  public void onMenuOptionClicked(MenuOptionClicked menuOption) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onMenuOptionClicked(menuOption);
+  }
+
+  @Override
+  public void onVarbitChanged(VarbitChanged varbitChanged) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onVarbitChanged(varbitChanged);
+  }
+
+  @Override
+  public void onWidgetClosed(WidgetClosed widgetClosed) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onWidgetClosed(widgetClosed);
+  }
+
+  @Override
+  public void onWidgetLoaded(WidgetLoaded widgetLoaded) {
+    if (notInHouse()) {
+      return;
+    }
+
+    super.onWidgetLoaded(widgetLoaded);
+  }
+
+  @Override
+  public String getConfigKey() {
+    return "poh";
+  }
+}

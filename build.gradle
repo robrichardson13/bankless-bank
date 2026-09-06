@@ -29,11 +29,26 @@ dependencies {
 }
 
 group = 'io.robrichardson.banklessbank'
-version = '0.1.0'
+version = '1.0.0'
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
 	options.release.set(11)
+}
+
+tasks.named('test') {
+	// The render harness draws with Graphics2D onto BufferedImages and loads RuneLite's bundled
+	// fonts through FontManager. Both work without a display; forcing headless keeps the JVM from
+	// trying to attach to one on a developer machine or in CI.
+	systemProperty 'java.awt.headless', 'true'
+	// Opt-in extra output directory for the render harness's PNGs (they always go to
+	// build/screenshots too). Gradle does not forward -D to the test JVM on its own.
+	if (System.getProperty('banklessbank.screenshotDir')) {
+		systemProperty 'banklessbank.screenshotDir', System.getProperty('banklessbank.screenshotDir')
+	}
+	testLogging {
+		showStandardStreams = false
+	}
 }
 
 tasks.register('runClient', JavaExec) {
