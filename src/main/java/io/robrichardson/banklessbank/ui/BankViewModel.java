@@ -1601,7 +1601,7 @@ public class BankViewModel
 
 		if (isStripOnlyDrag())
 		{
-			result = endStripOnlyDrag(hitTest(x, y), dragSlot.getCanonicalId());
+			result = endStripOnlyDrag(hitTest(x, y), dragSlot);
 		}
 		else
 		{
@@ -1735,19 +1735,43 @@ public class BankViewModel
 
 	/**
 	 * Resolves a drop started from a search result or a {@code BY_STORAGE} row. Valid targets are the
-	 * tab buttons in the strip (copies onto that tab, matching {@link BankLayout#copyItemToTab}) and
-	 * the plus button (copies into a new tab, matching {@link BankLayout#createTabWith}); the All
-	 * button, grid cells (neither a search result's nor a storage row's position is a real slot) and
-	 * anything else cancel. Dropping onto a tab that already holds the id is a no-op.
+	 * tab buttons in the strip and the plus button; the All button, grid cells (neither a search
+	 * result's nor a storage row's position is a real slot) and anything else cancel. Dropping onto a
+	 * tab that already holds the id is a no-op.
 	 *
-	 * <p>Card 27 board decision: every strip-only drag (search results <b>and</b> storage-mode drags,
-	 * both routed here via {@link #isStripOnlyDrag()}) now <b>copies</b> onto the target tab rather
-	 * than moving - search results are found across every tab, so "move it out of wherever it was"
-	 * was always the surprising reading, and this doubles as a fast bulk-filing gesture. Grid drags
-	 * (below, in {@link #endDrag}) remain moves.
+	 * <p>Whether the drop moves or copies depends on whether {@code from} knows its own source slot.
+	 * A search result does - {@link #buildSearchRows} builds its cells out of tab slots, so it always
+	 * carries a real {@code (tabIndex, indexInTab)} - and so it <b>moves</b> that one copy
+	 * ({@link BankLayout#moveSlotToTab}/{@link BankLayout#createTabFrom}), the same as a grid drag. A
+	 * {@code BY_STORAGE} cell does not (built with {@code tabIndex}/{@code indexInTab} {@code == -1}),
+	 * so it still <b>copies</b> ({@link BankLayout#copyItemToTab}/{@link BankLayout#createTabWith});
+	 * that is also the only strip-only drag that can place an item owned but not yet in any tab.
+	 * Which copy a search drag moves is decided by the search rows, not by a tie-break: with a tab
+	 * active only that tab is scanned, so it is the copy in the tab being viewed; in the All view it
+	 * is the first copy in strip order.
 	 */
-	private DropTarget endStripOnlyDrag(Hit hit, int itemId)
+	/**
+	 * Whether {@code from}'s recorded {@code (tabIndex, indexInTab)} still exists in the layout and
+	 * still holds {@code itemId}. The layout can be swapped out from under an armed drag (an RS
+	 * profile change mid-drag; see {@link #setLayout}), which would otherwise let a move relocate
+	 * whatever id happens to now sit at that stale index rather than the one the player dragged.
+	 */
+	private boolean sourceStillHoldsId(BankSlot from, int itemId)
 	{
+		BankTab sourceTab = layout.getTab(from.getTabIndex());
+		if (sourceTab == null)
+		{
+			return false;
+		}
+		Integer at = sourceTab.itemAt(from.getIndexInTab());
+		return at != null && at == itemId;
+	}
+
+	private DropTarget endStripOnlyDrag(Hit hit, BankSlot from)
+	{
+		final int itemId = from.getCanonicalId();
+		final boolean hasSource = from.getTabIndex() >= 0 && from.getIndexInTab() >= 0;
+
 		if (hit.getType() == Hit.Type.TAB && hit.getIndex() >= 1)
 		{
 			int tabIndex = hit.getIndex() - 1;
@@ -1758,6 +1782,21 @@ public class BankViewModel
 			}
 
 			final BankTab activeRef = activeTabRef();
+			if (hasSource)
+			{
+				if (!sourceStillHoldsId(from, itemId))
+				{
+					return DropTarget.cancel();
+				}
+				int landedAt = target.appendIndex();
+				if (!layout.moveSlotToTab(from.getTabIndex(), from.getIndexInTab(), tabIndex))
+				{
+					return DropTarget.cancel();
+				}
+				syncActiveTab(activeRef);
+				return new DropTarget(DropTarget.Type.TAB, tabIndex, landedAt);
+			}
+
 			int landedAt = layout.copyItemToTab(itemId, tabIndex);
 			if (landedAt < 0)
 			{
@@ -1769,8 +1808,14 @@ public class BankViewModel
 
 		if (hit.getType() == Hit.Type.TAB_PLUS)
 		{
+			if (hasSource && !sourceStillHoldsId(from, itemId))
+			{
+				return DropTarget.cancel();
+			}
 			final BankTab activeRef = activeTabRef();
-			int newIndex = layout.createTabWith(itemId);
+			int newIndex = hasSource
+				? layout.createTabFrom(from.getTabIndex(), from.getIndexInTab())
+				: layout.createTabWith(itemId);
 			if (newIndex == -1)
 			{
 				return DropTarget.cancel();

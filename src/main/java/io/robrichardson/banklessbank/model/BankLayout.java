@@ -383,8 +383,9 @@ public class BankLayout
 	}
 
 	/**
-	 * A new tab holding {@code itemId}, leaving every existing copy where it is. Used by a drop of a
-	 * search result onto the plus button, which copies rather than moves.
+	 * A new tab holding {@code itemId}, leaving every existing copy where it is. Used by a BY_STORAGE
+	 * drop onto the plus button and any other caller that only has an id, not a source slot; a search
+	 * result now moves via {@link #createTabFrom(int, int)} instead.
 	 *
 	 * @return the new tab's index, or -1 at the tab limit
 	 */
@@ -402,7 +403,8 @@ public class BankLayout
 
 	/**
 	 * A new tab holding the id at {@code (fromTab, fromSlot)}, blanking that slot. Used by a grid drag
-	 * onto the plus button and by the "New tab from <item>" menu row.
+	 * onto the plus button, by the "New tab from <item>" menu row, and by a search-result drag onto
+	 * the plus button (which moves the copy at its source slot rather than duplicating it).
 	 *
 	 * @return the new tab's index, or -1 at the tab limit or for an empty source slot
 	 */

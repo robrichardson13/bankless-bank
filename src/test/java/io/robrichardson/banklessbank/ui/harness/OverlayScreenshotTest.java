@@ -755,7 +755,7 @@ public class OverlayScreenshotTest
 	}
 
 	@Test
-	public void dragASearchResultOntoATabButtonCopiesItThere() throws IOException
+	public void dragASearchResultOntoATabButtonMovesItThere() throws IOException
 	{
 		final BankHarness harness = openedHarness();
 		harness.render();
@@ -790,16 +790,10 @@ public class OverlayScreenshotTest
 		harness.render(2);
 
 		assertFalse(harness.model().isDragging());
-		// Card 27: a search-result drag onto a tab COPIES, so the original stays in the Runes tab.
-		assertTrue("the item must still be in the Runes tab", harness.layout().getTab(2).contains(itemId));
-		assertTrue("the item must now also be in the Gear tab", harness.layout().getTab(1).contains(itemId));
+		// A search-result drag onto a tab MOVES the item out of its source tab.
+		assertFalse("the item must no longer be in the Runes tab", harness.layout().getTab(2).contains(itemId));
+		assertTrue("the item must now be in the Gear tab", harness.layout().getTab(1).contains(itemId));
 		assertEquals("rune", harness.model().getSearch());
-		boolean stillInResults = false;
-		for (BankSlot slot : harness.model().getSlots())
-		{
-			stillInResults |= slot.getCanonicalId() == itemId;
-		}
-		assertTrue("the copied item's original is still found by the Runes-tab search", stillInResults);
 	}
 
 	@Test
