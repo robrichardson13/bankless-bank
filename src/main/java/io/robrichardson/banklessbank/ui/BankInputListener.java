@@ -21,8 +21,11 @@ import net.runelite.client.util.HotkeyListener;
  * {@link BankOverlay} on the client thread, and posts every mutation to the controller's queue so
  * it runs on the client thread at the top of the next frame.
  *
- * <p>Registered at mouse-listener position 0, ahead of RuneLite's own overlay listener, so a
- * consumed event never reaches the game. That means it must stand aside while alt is held, or
+ * <p>Registered by appending to RuneLite's mouse listener list, never at position 0: the
+ * Stretched Mode plugin's coordinate translator lives at position 0 and everything behind it,
+ * including this listener and RuneLite's own overlay listener, sees canvas-space coordinates that
+ * match the bounds published here. A consumed event stops the listener chain and never reaches
+ * the game whatever this listener's position is. It must still stand aside while alt is held, or
  * alt-dragging other overlays would stop working.
  */
 @Singleton

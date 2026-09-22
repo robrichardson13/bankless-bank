@@ -224,8 +224,16 @@ public class BanklessBankPlugin extends Plugin
 		{
 			overlayManager.add(hudButtonOverlay);
 		}
-		mouseManager.registerMouseListener(0, inputListener);
-		mouseManager.registerMouseWheelListener(0, inputListener);
+		// Appended, never inserted at position 0. RuneLite's Stretched Mode plugin registers a
+		// coordinate-translating listener at position 0 that rewrites every event from stretched
+		// screen pixels to real canvas pixels; core plugins start before hub plugins, so inserting at
+		// 0 here would land ahead of it and every hit-test in BankInputListener would compare raw
+		// screen coordinates against canvas-space bounds and miss. Appending keeps us behind the
+		// translator whether it started before us or gets enabled later (a later enable inserts at
+		// 0, still ahead). Consumption is what stops an event reaching the game, not list position,
+		// so nothing is lost by sitting behind RuneLite's own overlay listener either.
+		mouseManager.registerMouseListener(inputListener);
+		mouseManager.registerMouseWheelListener(inputListener);
 		keyManager.registerKeyListener(inputListener);
 		keyManager.registerKeyListener(inputListener.getHotkeyListener());
 
