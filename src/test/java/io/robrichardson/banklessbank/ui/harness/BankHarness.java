@@ -189,7 +189,7 @@ public final class BankHarness
 		Mockito.when(itemManager.getItemPrice(anyInt())).thenAnswer(inv ->
 		{
 			final int id = inv.getArgument(0);
-			return id == FakeStorages.COINS ? 1 : 100 + (id % 900) * 137;
+			return id == FakeStorages.COINS ? 1L : 100L + (id % 900) * 137;
 		});
 	}
 

@@ -212,7 +212,7 @@ public class BankViewControllerProfileTest
 		when(plugin.getLoadedProfileKey()).thenReturn(PROFILE);
 		when(layoutStore.load(PROFILE)).thenReturn(new BankLayout());
 		when(config.placeholders()).thenReturn(false);
-		when(itemManager.getItemPrice(5555)).thenReturn(4200);
+		when(itemManager.getItemPrice(5555)).thenReturn(4200L);
 
 		Storage<?> storage = org.mockito.Mockito.mock(Storage.class);
 		ItemStack stack = new ItemStack(5555, "Whip", 1L, 0, 0, false);
@@ -230,7 +230,7 @@ public class BankViewControllerProfileTest
 	{
 		final String otherProfile = "other-profile";
 		when(config.placeholders()).thenReturn(false);
-		when(itemManager.getItemPrice(5555)).thenReturn(4200);
+		when(itemManager.getItemPrice(5555)).thenReturn(4200L);
 
 		Storage<?> storage = org.mockito.Mockito.mock(Storage.class);
 		ItemStack stack = new ItemStack(5555, "Whip", 1L, 0, 0, false);

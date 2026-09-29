@@ -47,12 +47,12 @@ public class BankViewModelTest
 		return new LinkedHashSet<>(Arrays.asList(ids));
 	}
 
-	private static java.util.Map<Integer, Integer> mapOf(int... kv)
+	private static java.util.Map<Integer, Long> mapOf(int... kv)
 	{
-		java.util.Map<Integer, Integer> map = new java.util.HashMap<>();
+		java.util.Map<Integer, Long> map = new java.util.HashMap<>();
 		for (int i = 0; i < kv.length; i += 2)
 		{
-			map.put(kv[i], kv[i + 1]);
+			map.put(kv[i], (long) kv[i + 1]);
 		}
 		return map;
 	}

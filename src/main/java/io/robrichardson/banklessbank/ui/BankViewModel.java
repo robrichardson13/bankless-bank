@@ -33,7 +33,7 @@ public class BankViewModel
 	private List<StorageSnapshot> snapshots = Collections.emptyList();
 	private Map<Integer, String> knownNames = new HashMap<>();
 	/** Canonical id -> GE unit price, pushed by the controller from {@code ItemManager}. */
-	private Map<Integer, Integer> unitPrices = new HashMap<>();
+	private Map<Integer, Long> unitPrices = new HashMap<>();
 	private boolean placeholdersEnabled = true;
 	private boolean showEmptyStorages;
 	private int visibleRows = BankGeometry.DEFAULT_ROWS;
@@ -288,15 +288,15 @@ public class BankViewModel
 	}
 
 	/** Canonical id -> GE unit price. Rebuilt whenever snapshots rebuild; does not force a redraw. */
-	public void setUnitPrices(Map<Integer, Integer> prices)
+	public void setUnitPrices(Map<Integer, Long> prices)
 	{
 		this.unitPrices = new HashMap<>(prices);
 	}
 
 	/** GE unit price for a canonical id, or 0 when unknown. */
-	public int unitPrice(int canonicalId)
+	public long unitPrice(int canonicalId)
 	{
-		return unitPrices.getOrDefault(canonicalId, 0);
+		return unitPrices.getOrDefault(canonicalId, 0L);
 	}
 
 	// =========================================================================================

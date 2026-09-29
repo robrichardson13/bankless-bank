@@ -1255,7 +1255,7 @@ public class BankOverlay extends Overlay
 		}
 		else
 		{
-			final int price = model.unitPrice(slot.getCanonicalId());
+			final long price = model.unitPrice(slot.getCanonicalId());
 			if (price > 0)
 			{
 				final long qty = slot.getQuantity();
