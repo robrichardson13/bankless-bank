@@ -67,7 +67,7 @@ public class BankViewController
 	private final Map<Integer, String> knownNames = new HashMap<>();
 
 	/** Canonical id to GE unit price, refreshed alongside {@link #knownNames}. */
-	private final Map<Integer, Integer> unitPrices = new HashMap<>();
+	private final Map<Integer, Long> unitPrices = new HashMap<>();
 
 	/** Storage instance to owning manager config key. Rebuilt lazily; identity keyed. */
 	private final Map<Object, String> categories = new IdentityHashMap<>();
