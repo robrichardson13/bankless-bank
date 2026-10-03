@@ -1040,11 +1040,11 @@ public class BankViewModelTest
 	// ---- drag search results onto tabs ----
 
 	@Test
-	public void searchDragDropOnATabButtonAppendsTheItemToTheEndOfThatTab()
+	public void searchDragOntoAnotherTabMovesTheCopyOutOfTheTabBeingViewed()
 	{
 		layout.getMainTab().append(1);
+		layout.getMainTab().append(2);
 		int otherTab = layout.createTabWith(99);
-		layout.getTab(otherTab).append(2);
 		model.setSnapshots(Arrays.asList(
 			storage("carryable", "Inventory", item(1, "Whip", 1), item(2, "Sword", 1), item(99, "Other", 1))));
 		model.setActiveTab(0);
@@ -1060,15 +1060,78 @@ public class BankViewModelTest
 
 		assertEquals(DropTarget.Type.TAB, target.getType());
 		assertEquals(otherTab, target.getTabIndex());
-		// Card 27: a search-result drag onto a tab COPIES, so the original stays in Main.
-		assertTrue(layout.getMainTab().contains(1));
-		// Appended after the tab's existing item (2), not swapped into its slot.
-		assertEquals(Integer.valueOf(2), layout.getTab(otherTab).itemAt(layout.getTab(otherTab).indexOf(2)));
+		// The item moves out of Main...
+		assertFalse(layout.getMainTab().contains(1));
+		// ...id 2 (not dragged) stays behind...
+		assertTrue(layout.getMainTab().contains(2));
+		// ...and lands appended at the end of the target tab.
 		assertEquals(1, layout.getTab(otherTab).itemAt(layout.getTab(otherTab).appendIndex() - 1).intValue());
+		assertEquals(1, layout.copyCount(1));
 	}
 
 	@Test
-	public void searchDragDropOntoTheTabTheItemAlreadyLivesInIsANoOp()
+	public void searchDragIsRefusedWhenTheSourceSlotNoLongerHoldsTheDraggedId()
+	{
+		// The layout can be swapped/mutated out from under an armed drag (e.g. an RS profile change
+		// mid-drag). If the recorded source slot no longer holds the id that was dragged, the drop
+		// must be refused rather than relocating whatever id now sits there.
+		layout.getMainTab().append(1);
+		int otherTab = layout.createTabWith(99);
+		model.setSnapshots(Arrays.asList(
+			storage("carryable", "Inventory", item(1, "Whip", 1), item(99, "Other", 1))));
+		model.setActiveTab(0);
+		model.setSearch("whip");
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		// Strip index: 0 = All, 1 = Main, 2 = otherTab.
+		java.awt.Rectangle otherTabButton = model.tabRect(2);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		// Simulate the layout changing under the drag: the source slot (Main, index 0) now holds a
+		// different id than the one that was dragged.
+		layout.getMainTab().setAt(0, 42);
+
+		DropTarget target = model.endDrag(otherTabButton.x + 1, otherTabButton.y + 1);
+
+		assertEquals(DropTarget.Type.CANCEL, target.getType());
+		// Nothing moved: the source slot is untouched...
+		assertEquals(Integer.valueOf(42), layout.getMainTab().itemAt(0));
+		// ...and no duplicate appeared in the target tab.
+		assertFalse(layout.getTab(otherTab).contains(1));
+		assertFalse(layout.getTab(otherTab).contains(42));
+	}
+
+	@Test
+	public void searchDragOntoAnotherTabFromTheAllViewMovesTheFirstCopyInStripOrderAndLeavesTheRest()
+	{
+		layout.getMainTab().append(5);
+		int tabA = layout.createTabWith(5);
+		int tabB = layout.createTabWith(99);
+		model.setSnapshots(Arrays.asList(
+			storage("carryable", "Inventory", item(5, "Whip", 1), item(99, "Other", 1))));
+		model.setActiveTab(-1);
+		model.setSearch("whip");
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		java.awt.Rectangle tabBButton = model.tabRect(tabB + 1);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(tabBButton.x + 1, tabBButton.y + 1);
+
+		assertEquals(DropTarget.Type.TAB, target.getType());
+		// First copy in strip order (main) moved out...
+		assertFalse(layout.getMainTab().contains(5));
+		// ...the other existing copy (tabA) is untouched...
+		assertTrue(layout.getTab(tabA).contains(5));
+		// ...and the target now holds it.
+		assertTrue(layout.getTab(tabB).contains(5));
+		assertEquals(2, layout.copyCount(5));
+	}
+
+	@Test
+	public void searchDragOntoTheTabTheItemAlreadyLivesInIsStillANoOp()
 	{
 		layout.getMainTab().append(1);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "Whip", 1))));
@@ -1084,7 +1147,59 @@ public class BankViewModelTest
 		DropTarget target = model.endDrag(mainTabButton.x + 1, mainTabButton.y + 1);
 
 		assertEquals(DropTarget.Type.CANCEL, target.getType());
+		// Unchanged position, not appended to the end.
 		assertEquals(Integer.valueOf(1), layout.getMainTab().itemAt(0));
+	}
+
+	@Test
+	public void searchDragOntoAFullTabIsRefusedAndLeavesBothTabsUntouched()
+	{
+		layout.getMainTab().append(1);
+		int otherTab = layout.createTabWith(2);
+		BankTab target = layout.getTab(otherTab);
+		for (int i = target.appendIndex(); i < target.maxSlots(); i++)
+		{
+			target.append(1000 + i);
+		}
+		model.setSnapshots(Arrays.asList(
+			storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(0);
+		model.setSearch("whip");
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		java.awt.Rectangle otherTabButton = model.tabRect(otherTab + 1);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget result = model.endDrag(otherTabButton.x + 1, otherTabButton.y + 1);
+
+		assertEquals(DropTarget.Type.CANCEL, result.getType());
+		assertTrue(layout.getMainTab().contains(1));
+		assertFalse(target.contains(1));
+	}
+
+	@Test
+	public void searchDragThatEmptiesANonMainTabPrunesItAndDropsBackToTheAllView()
+	{
+		int nonMain = layout.createTabWith(1);
+		model.setActiveTab(nonMain);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setSearch("whip");
+		model.rebuild();
+
+		int tabsBefore = layout.getTabs().size();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		// Strip index 1 = Main, since dragging the only other tab's sole item onto Main empties it.
+		java.awt.Rectangle mainTabButton = model.tabRect(1);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(mainTabButton.x + 1, mainTabButton.y + 1);
+
+		assertEquals(DropTarget.Type.TAB, target.getType());
+		assertEquals(tabsBefore - 1, layout.getTabs().size());
+		assertTrue(layout.getMainTab().contains(1));
+		assertEquals(-1, model.getActiveTab());
 	}
 
 	@Test
@@ -1130,7 +1245,7 @@ public class BankViewModelTest
 	}
 
 	@Test
-	public void searchDragOnThePlusButtonCreatesANewTabWithTheItem()
+	public void searchDragOntoThePlusButtonMovesTheItemIntoTheNewTab()
 	{
 		layout.getMainTab().append(1);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "Whip", 1))));
@@ -1146,8 +1261,8 @@ public class BankViewModelTest
 		DropTarget target = model.endDrag(plusButton.x + 1, plusButton.y + 1);
 
 		assertEquals(DropTarget.Type.NEW_TAB, target.getType());
-		// Card 27: the plus button also copies for a search-result drag.
-		assertTrue(layout.getMainTab().contains(1));
+		// A search-result drag onto the plus button moves the item into the new tab.
+		assertFalse(layout.getMainTab().contains(1));
 		assertTrue(layout.getTab(target.getTabIndex()).contains(1));
 	}
 
@@ -1193,7 +1308,8 @@ public class BankViewModelTest
 
 		assertEquals(DropTarget.Type.TAB, target.getType());
 		assertEquals(otherTab, target.getTabIndex());
-		// Card 27: a storage-mode drag onto a tab COPIES too (both paths share endStripOnlyDrag).
+		// A BY_STORAGE drag carries no source slot, so it still COPIES onto the target tab and leaves
+		// the source tab untouched - this is the regression fence for "storage-mode unchanged".
 		assertTrue(layout.getMainTab().contains(1));
 		assertEquals(1, layout.getTab(otherTab).itemAt(layout.getTab(otherTab).appendIndex() - 1).intValue());
 	}
@@ -1219,8 +1335,29 @@ public class BankViewModelTest
 		assertEquals(DropTarget.Type.TAB, target.getType());
 		assertEquals(layout.indexOfMainTab(), target.getTabIndex());
 		assertTrue(layout.getMainTab().contains(1));
-		// Card 27: the original copy in the source tab is untouched by a strip-only drag's copy.
+		// BY_STORAGE drags still copy: the original copy in the source tab is untouched.
 		assertTrue(layout.getTab(otherTab).contains(1));
+	}
+
+	@Test
+	public void storageModeDragOntoThePlusButtonStillCopies()
+	{
+		layout.getMainTab().append(1);
+		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(1, "Whip", 1))));
+		model.setActiveTab(0);
+		model.setMode(ViewMode.BY_STORAGE);
+		model.rebuild();
+
+		java.awt.Rectangle dragFrom = model.slotRect(0);
+		// Strip: 0 = All, 1 = Main, 2 = plus (only main tab exists so far).
+		java.awt.Rectangle plusButton = model.tabRect(2);
+
+		model.beginDrag(dragFrom.x, dragFrom.y);
+		DropTarget target = model.endDrag(plusButton.x + 1, plusButton.y + 1);
+
+		assertEquals(DropTarget.Type.NEW_TAB, target.getType());
+		assertTrue(layout.getMainTab().contains(1));
+		assertTrue(layout.getTab(target.getTabIndex()).contains(1));
 	}
 
 	@Test
@@ -1419,7 +1556,7 @@ public class BankViewModelTest
 	}
 
 	@Test
-	public void allTabSearchThenDropOnATabCopiesTheItemIntoIt()
+	public void allTabSearchThenDropOnATabMovesTheItemIntoIt()
 	{
 		layout.getMainTab().append(1);
 		int otherTab = layout.createTabWith(99);
@@ -1437,11 +1574,11 @@ public class BankViewModelTest
 		model.rebuild();
 
 		assertEquals(DropTarget.Type.TAB, target.getType());
-		// Card 27: a search drag COPIES, so the original stays in Main.
-		assertTrue(layout.getMainTab().contains(1));
+		// The only copy moves out of Main into the target tab.
+		assertFalse(layout.getMainTab().contains(1));
 		assertTrue(layout.getTab(otherTab).contains(1));
 
-		// The result list still spans every tab (All is still active), but the item's position moved.
+		// The result list still spans every tab (All is still active), and the item still matches.
 		List<Integer> ids = new ArrayList<>();
 		for (BankSlot slot : model.getSlots())
 		{
@@ -4034,7 +4171,7 @@ public class BankViewModelTest
 	}
 
 	@Test
-	public void draggingASearchResultOntoATabCopiesAndLeavesTheOriginal()
+	public void draggingASearchResultOntoATabMovesItOutOfTheOriginal()
 	{
 		layout.getMainTab().append(5);
 		int other = layout.createTabWith(1);
@@ -4049,7 +4186,7 @@ public class BankViewModelTest
 		DropTarget target = model.endDrag(otherButton.x + 1, otherButton.y + 1);
 
 		assertEquals(DropTarget.Type.TAB, target.getType());
-		assertTrue(layout.getMainTab().contains(5));
+		assertFalse(layout.getMainTab().contains(5));
 		assertTrue(layout.getTab(other).contains(5));
 	}
 
@@ -4074,7 +4211,7 @@ public class BankViewModelTest
 	}
 
 	@Test
-	public void draggingASearchResultOntoThePlusButtonCopiesIntoTheNewTab()
+	public void draggingASearchResultOntoThePlusButtonMovesItIntoTheNewTab()
 	{
 		layout.getMainTab().append(5);
 		model.setSnapshots(Collections.singletonList(storage("carryable", "Inventory", item(5, "Rune", 1))));
@@ -4088,7 +4225,7 @@ public class BankViewModelTest
 		DropTarget target = model.endDrag(plusButton.x + 1, plusButton.y + 1);
 
 		assertEquals(DropTarget.Type.NEW_TAB, target.getType());
-		assertTrue(layout.getMainTab().contains(5));
+		assertFalse(layout.getMainTab().contains(5));
 		assertTrue(layout.getTab(target.getTabIndex()).contains(5));
 	}
 
