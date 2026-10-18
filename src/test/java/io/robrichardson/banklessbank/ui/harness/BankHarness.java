@@ -140,7 +140,7 @@ public final class BankHarness
 		listener = UiHarnessParts.listener(config, controller);
 		bankOverlay = UiHarnessParts.bankOverlay(client, itemManager, spriteManager, config, controller,
 			listener);
-		hudOverlay = UiHarnessParts.hudOverlay(controller, listener);
+		hudOverlay = UiHarnessParts.hudOverlay(controller, listener, config, itemManager);
 
 		controller.startUp();
 
@@ -163,6 +163,10 @@ public final class BankHarness
 		// the title bar silently renders with no GE value at all.
 		Mockito.when(config.showValue()).thenReturn(true);
 		Mockito.when(config.toggleKeybind()).thenReturn(Keybind.NOT_SET);
+		Mockito.when(config.hudSize()).thenReturn(HudButtonOverlay.DEFAULT_SIZE);
+		Mockito.when(config.hudBackgroundColor()).thenReturn(new Color(0x3E, 0x35, 0x29, 0xD0));
+		Mockito.when(config.hudBorderColor()).thenReturn(new Color(0x5F, 0x54, 0x3F));
+		Mockito.when(config.hudGlyphColor()).thenReturn(new Color(0xFF, 0x98, 0x1F));
 	}
 
 	private void stubClient()
@@ -380,8 +384,8 @@ public final class BankHarness
 	private void renderHud(Graphics2D g)
 	{
 		final int x = 5;
-		final int y = CANVAS_H - HudButtonOverlay.SIZE - 5;
-		hudOverlay.getBounds().setBounds(x, y, HudButtonOverlay.SIZE, HudButtonOverlay.SIZE);
+		final int y = CANVAS_H - HudButtonOverlay.DEFAULT_SIZE - 5;
+		hudOverlay.getBounds().setBounds(x, y, HudButtonOverlay.DEFAULT_SIZE, HudButtonOverlay.DEFAULT_SIZE);
 
 		final Graphics2D hudGraphics = (Graphics2D) g.create();
 		hudGraphics.translate(x, y);

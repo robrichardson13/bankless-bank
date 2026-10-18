@@ -60,7 +60,7 @@ public class BankInputListenerOrderingTest
 
 		// HUD button at canvas (10,10)-(40,40); the bank is closed.
 		listener.publish(false, null, false, false);
-		listener.publishHud(true, new Rectangle(10, 10, HudButtonOverlay.SIZE, HudButtonOverlay.SIZE));
+		listener.publishHud(true, new Rectangle(10, 10, HudButtonOverlay.DEFAULT_SIZE, HudButtonOverlay.DEFAULT_SIZE));
 	}
 
 	private static MouseEvent press(int screenX, int screenY)

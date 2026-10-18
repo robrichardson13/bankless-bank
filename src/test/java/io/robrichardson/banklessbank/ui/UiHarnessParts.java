@@ -44,8 +44,9 @@ public final class UiHarnessParts
 		return new BankOverlay(client, itemManager, spriteManager, config, controller, listener);
 	}
 
-	public static HudButtonOverlay hudOverlay(BankViewController controller, BankInputListener listener)
+	public static HudButtonOverlay hudOverlay(BankViewController controller, BankInputListener listener,
+		BanklessBankConfig config, ItemManager itemManager)
 	{
-		return new HudButtonOverlay(controller, listener);
+		return new HudButtonOverlay(controller, listener, config, itemManager);
 	}
 }

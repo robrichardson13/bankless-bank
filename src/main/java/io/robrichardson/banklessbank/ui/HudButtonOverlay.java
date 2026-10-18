@@ -1,13 +1,18 @@
 package io.robrichardson.banklessbank.ui;
 
+import io.robrichardson.banklessbank.BanklessBankConfig;
 import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Dimension;
 import java.awt.Graphics2D;
 import java.awt.Rectangle;
 import java.awt.Stroke;
+import java.awt.geom.AffineTransform;
+import java.awt.image.BufferedImage;
 import javax.inject.Inject;
 import javax.inject.Singleton;
+import net.runelite.api.Constants;
+import net.runelite.client.game.ItemManager;
 import net.runelite.client.ui.overlay.Overlay;
 import net.runelite.client.ui.overlay.OverlayLayer;
 import net.runelite.client.ui.overlay.OverlayPosition;
@@ -15,30 +20,35 @@ import net.runelite.client.ui.overlay.OverlayPosition;
 /**
  * The always-visible launch button. An ordinary movable, snappable overlay, so RuneLite's alt-drag
  * moves it and {@code OverlayManager} persists its location for us. Clicks are handled by
- * {@link BankInputListener}, which is why the button publishes its bounds every frame.
+ * {@link BankInputListener}, which is why the button publishes its bounds every frame. Drawn
+ * under every widget, so the bank window (ABOVE_WIDGETS) and chat always paint over it.
  */
 @Singleton
 public class HudButtonOverlay extends Overlay
 {
-	public static final int SIZE = 30;
-
-	private static final Color PANEL = new Color(0x3E, 0x35, 0x29, 0xD0);
-	private static final Color BORDER = new Color(0x5F, 0x54, 0x3F);
-	private static final Color GLYPH = new Color(0xFF, 0x98, 0x1F);
+	/** The config's default size, and the size the bank-booth glyph's coordinates are drawn at. */
+	public static final int DEFAULT_SIZE = 30;
+	private static final int ICON_PADDING = 2;
 	private static final Color OPEN_TINT = new Color(0xFF, 0xFF, 0xFF, 40);
-	private static final Dimension DIMENSION = new Dimension(SIZE, SIZE);
 
 	private final BankViewController controller;
 	private final BankInputListener listener;
+	private final BanklessBankConfig config;
+	private final ItemManager itemManager;
 
 	@Inject
-	HudButtonOverlay(BankViewController controller, BankInputListener listener)
+	HudButtonOverlay(BankViewController controller, BankInputListener listener, BanklessBankConfig config,
+		ItemManager itemManager)
 	{
 		this.controller = controller;
 		this.listener = listener;
+		this.config = config;
+		this.itemManager = itemManager;
 
 		setPosition(OverlayPosition.BOTTOM_LEFT);
-		setLayer(OverlayLayer.ABOVE_WIDGETS);
+		// ABOVE_SCENE, not UNDER_WIDGETS: OverlayManager promotes an alt-dragged UNDER_WIDGETS overlay
+		// to ABOVE_WIDGETS, which would put a moved button back on top of chat and PM text.
+		setLayer(OverlayLayer.ABOVE_SCENE);
 		setPriority(PRIORITY_LOW);
 		setResizable(false);
 
@@ -49,46 +59,62 @@ public class HudButtonOverlay extends Overlay
 	@Override
 	public Dimension render(Graphics2D graphics)
 	{
-		// OverlayManager's draw-order comparator (OVERLAY_COMPARATOR) sorts by position group before
-		// priority, and a DYNAMIC overlay's group always sorts - and so draws - ahead of any
-		// snap-corner position group, regardless of either overlay's priority. BankOverlay is
-		// DYNAMIC and this overlay is a snap-corner position (BOTTOM_LEFT, movable/snappable), so no
-		// setPriority value can make the bank draw after us: RuneLite always draws us last, on top,
-		// once we land in the same screen area. BankOverlay renders earlier in the same frame (that
-		// same ordering), so by the time we get here the listener holds this frame's bank state, not
-		// last frame's - fall back to not drawing at all rather than paint over the bank's content.
-		final Rectangle bounds = getBounds();
-		final Rectangle hudRect = new Rectangle(bounds.x, bounds.y, SIZE, SIZE);
-		if (listener.isBankOpen() && listener.getBankBounds().intersects(hudRect))
+		final int size = config.hudSize();
+		final int arc = Math.max(4, size / 5);
+
+		graphics.setColor(config.hudBackgroundColor());
+		graphics.fillRoundRect(0, 0, size, size, arc, arc);
+		graphics.setColor(config.hudBorderColor());
+		graphics.drawRoundRect(0, 0, size - 1, size - 1, arc, arc);
+
+		final int iconItemId = config.hudIconItemId();
+		if (iconItemId > 0)
 		{
-			listener.publishHud(false, null);
-			return null;
+			drawItemIcon(graphics, iconItemId, size);
+		}
+		else
+		{
+			drawBankBooth(graphics, size);
 		}
 
-		graphics.setColor(PANEL);
-		graphics.fillRoundRect(0, 0, SIZE, SIZE, 6, 6);
-		graphics.setColor(BORDER);
-		graphics.drawRoundRect(0, 0, SIZE - 1, SIZE - 1, 6, 6);
+		if (controller.isOpen())
+		{
+			graphics.setColor(OPEN_TINT);
+			graphics.fillRoundRect(0, 0, size, size, arc, arc);
+		}
 
-		// A bank booth: a counter with two chest slots behind it.
-		final Stroke old = graphics.getStroke();
+		final Rectangle bounds = getBounds();
+		listener.publishHud(true, new Rectangle(bounds.x, bounds.y, size, size));
+
+		return new Dimension(size, size);
+	}
+
+	/** The item's inventory sprite, scaled to fit inside the button and centred. */
+	private void drawItemIcon(Graphics2D graphics, int itemId, int size)
+	{
+		final BufferedImage image = itemManager.getImage(itemId);
+		final double scale = Math.min(
+			(size - 2.0 * ICON_PADDING) / Constants.ITEM_SPRITE_WIDTH,
+			(size - 2.0 * ICON_PADDING) / Constants.ITEM_SPRITE_HEIGHT);
+		final int width = (int) Math.round(Constants.ITEM_SPRITE_WIDTH * scale);
+		final int height = (int) Math.round(Constants.ITEM_SPRITE_HEIGHT * scale);
+		graphics.drawImage(image, (size - width) / 2, (size - height) / 2, width, height, null);
+	}
+
+	/** A bank booth: a counter with two chest slots behind it. */
+	private void drawBankBooth(Graphics2D graphics, int size)
+	{
+		final AffineTransform oldTransform = graphics.getTransform();
+		final Stroke oldStroke = graphics.getStroke();
+		graphics.scale(size / (double) DEFAULT_SIZE, size / (double) DEFAULT_SIZE);
 		graphics.setStroke(new BasicStroke(1.5f));
-		graphics.setColor(GLYPH);
+		graphics.setColor(config.hudGlyphColor());
 		graphics.drawRect(6, 8, 8, 7);
 		graphics.drawRect(16, 8, 8, 7);
 		graphics.fillRect(5, 19, 20, 3);
 		graphics.drawLine(8, 22, 8, 25);
 		graphics.drawLine(22, 22, 22, 25);
-		graphics.setStroke(old);
-
-		if (controller.isOpen())
-		{
-			graphics.setColor(OPEN_TINT);
-			graphics.fillRoundRect(0, 0, SIZE, SIZE, 6, 6);
-		}
-
-		listener.publishHud(true, hudRect);
-
-		return DIMENSION;
+		graphics.setStroke(oldStroke);
+		graphics.setTransform(oldTransform);
 	}
 }
