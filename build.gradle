@@ -32,7 +32,7 @@ dependencies {
 }
 
 group = 'io.robrichardson.banklessbank'
-version = '1.0.2'
+version = '1.0.3'
 
 tasks.withType(JavaCompile).configureEach {
 	options.encoding = 'UTF-8'
