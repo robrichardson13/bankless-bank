@@ -106,24 +106,6 @@ public class BankInputListener implements MouseListener, MouseWheelListener, Key
 		this.hudBounds = bounds == null ? EMPTY : bounds;
 	}
 
-	/**
-	 * Client thread. Whether the bank window is open this frame, as most recently published by
-	 * {@link BankOverlay#render}. {@link HudButtonOverlay} reads this to decide whether it would be
-	 * drawn on top of the bank window (see the draw-order note in its {@code render}), since
-	 * OverlayManager's draw order cannot be fixed with priority alone.
-	 */
-	public boolean isBankOpen()
-	{
-		return open;
-	}
-
-	/** Client thread. The bank window's current on-screen bounds, as most recently published by
-	 * {@link BankOverlay#render}; empty when the bank is closed. */
-	public Rectangle getBankBounds()
-	{
-		return bounds;
-	}
-
 	private boolean inside(MouseEvent e)
 	{
 		return open && !altHeld && bounds.contains(e.getPoint());

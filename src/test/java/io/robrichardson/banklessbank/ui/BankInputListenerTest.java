@@ -99,9 +99,8 @@ public class BankInputListenerTest
 
 		final Rectangle bankBounds = new Rectangle(0, 400, 400, 300);
 		listener.publish(true, bankBounds, false, false);
-		// Simulates the HUD button still reporting itself visible at a rect that overlaps the bank
-		// window - e.g. before HudButtonOverlay's own draw-order fallback kicks in for a frame.
-		listener.publishHud(true, new Rectangle(5, 500, HudButtonOverlay.SIZE, HudButtonOverlay.SIZE));
+		// The HUD button sits under the bank window, still publishing its rect.
+		listener.publishHud(true, new Rectangle(5, 500, HudButtonOverlay.DEFAULT_SIZE, HudButtonOverlay.DEFAULT_SIZE));
 
 		final int x = 10;
 		final int y = 505;
