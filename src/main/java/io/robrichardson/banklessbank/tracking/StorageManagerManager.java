@@ -2,12 +2,13 @@
  * Ported from "Dude, Where's My Stuff?" by Thource (https://github.com/Thource/dude-wheres-my-stuff)
  * Copyright (c) 2022, Thource. Licensed under the BSD 2-Clause License.
  *
- * Bankless Bank changes: dropped the coins and minigames managers (not items), the export
+ * Bankless Bank changes: dropped the minigames manager (points, not items), the export
  * writers and the Swing panel refreshes. Added logIn() and findStorage() for the bootstrap import.
  */
 package io.robrichardson.banklessbank.tracking;
 
 import io.robrichardson.banklessbank.tracking.carryable.CarryableStorageManager;
+import io.robrichardson.banklessbank.tracking.coins.CoinsStorageManager;
 import io.robrichardson.banklessbank.tracking.death.DeathItems;
 import io.robrichardson.banklessbank.tracking.death.DeathStorageManager;
 import io.robrichardson.banklessbank.tracking.death.Deathbank;
@@ -46,6 +47,7 @@ public class StorageManagerManager {
 
   private final SailingStorageManager sailingStorageManager;
   private final CarryableStorageManager carryableStorageManager;
+  private final CoinsStorageManager coinsStorageManager;
   private final DeathStorageManager deathStorageManager;
   private final StashStorageManager stashStorageManager;
   private final PlayerOwnedHouseStorageManager playerOwnedHouseStorageManager;
@@ -57,6 +59,7 @@ public class StorageManagerManager {
       ItemManager itemManager,
       SailingStorageManager sailingStorageManager,
       CarryableStorageManager carryableStorageManager,
+      CoinsStorageManager coinsStorageManager,
       DeathStorageManager deathStorageManager,
       StashStorageManager stashStorageManager,
       PlayerOwnedHouseStorageManager playerOwnedHouseStorageManager,
@@ -64,6 +67,7 @@ public class StorageManagerManager {
     this.itemManager = itemManager;
     this.sailingStorageManager = sailingStorageManager;
     this.carryableStorageManager = carryableStorageManager;
+    this.coinsStorageManager = coinsStorageManager;
     this.deathStorageManager = deathStorageManager;
     this.stashStorageManager = stashStorageManager;
     this.playerOwnedHouseStorageManager = playerOwnedHouseStorageManager;
@@ -73,6 +77,7 @@ public class StorageManagerManager {
         Arrays.asList(
             sailingStorageManager,
             carryableStorageManager,
+            coinsStorageManager,
             deathStorageManager,
             stashStorageManager,
             playerOwnedHouseStorageManager,
@@ -185,6 +190,7 @@ public class StorageManagerManager {
                             || (s instanceof Deathbank && ((Deathbank) s).isActive())
                             || !(s instanceof Deathpile || s instanceof Deathbank)),
             getCarryableStorageManager().getStorages().stream(),
+            getCoinsStorageManager().getStorages().stream(),
             getStashStorageManager().getStorages().stream(),
             getSailingStorageManager().getStorages().stream(),
             getPlayerOwnedHouseStorageManager().getStorages().stream(),

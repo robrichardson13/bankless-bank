@@ -7,6 +7,7 @@ import io.robrichardson.banklessbank.tracking.ClientState;
 import io.robrichardson.banklessbank.tracking.ItemContainerWatcher;
 import io.robrichardson.banklessbank.tracking.StorageManagerManager;
 import io.robrichardson.banklessbank.tracking.carryable.CarryableStorageManager;
+import io.robrichardson.banklessbank.tracking.coins.CoinsStorageManager;
 import io.robrichardson.banklessbank.tracking.death.DeathStorageManager;
 import io.robrichardson.banklessbank.tracking.playerownedhouse.PlayerOwnedHouseStorageManager;
 import io.robrichardson.banklessbank.tracking.sailing.SailingStorageManager;
@@ -137,6 +138,9 @@ public class BanklessBankPlugin extends Plugin
 	private CarryableStorageManager carryableStorageManager;
 
 	@Inject
+	private CoinsStorageManager coinsStorageManager;
+
+	@Inject
 	private DeathStorageManager deathStorageManager;
 
 	@Getter
@@ -184,6 +188,7 @@ public class BanklessBankPlugin extends Plugin
 				itemManager,
 				sailingStorageManager,
 				carryableStorageManager,
+				coinsStorageManager,
 				deathStorageManager,
 				stashStorageManager,
 				playerOwnedHouseStorageManager,

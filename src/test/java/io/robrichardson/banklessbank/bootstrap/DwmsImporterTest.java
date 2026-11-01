@@ -90,11 +90,22 @@ public class DwmsImporterTest
 		assertTrue(DwmsImporter.isImportedKey("world.hallowedSepulchre"));
 		assertTrue(DwmsImporter.isImportedKey("sailing.cargoHold"));
 		assertTrue(DwmsImporter.isImportedKey("stash.unit1"));
+		assertTrue(DwmsImporter.isImportedKey("coins.blastfurnace"));
+		assertTrue(DwmsImporter.isImportedKey("coins.servantsmoneybag"));
 		assertTrue(DwmsImporter.isImportedKey("minutesPlayed"));
 	}
 
 	@Test
-	public void isImportedKeyRejectsCoinsAndMinigames()
+	public void isImportedKeyRejectsUntrackedCoinStorages()
+	{
+		// Carryable already tracks inventory and looting bag coins; a UIM has no bank.
+		assertFalse(DwmsImporter.isImportedKey("coins.inventory"));
+		assertFalse(DwmsImporter.isImportedKey("coins.lootingbag"));
+		assertFalse(DwmsImporter.isImportedKey("coins.bank"));
+	}
+
+	@Test
+	public void isImportedKeyRejectsMinigamesAndBareCategories()
 	{
 		assertFalse(DwmsImporter.isImportedKey("coins"));
 		assertFalse(DwmsImporter.isImportedKey("minigames.temporossReward"));

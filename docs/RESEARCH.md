@@ -146,7 +146,7 @@ counts (excluding `*TabPanel` classes) as of v2.11.5:
 | `world` | 2,339 | yes | Leprechaun, fossil storage, log storage, potion storage, nests, etc. |
 | `stash` | 1,825 | yes | All STASH units. |
 | `sailing` | 687 | yes | Boat holds. |
-| `coins` | 483 | no (v1) | Coffers and GE coins are not items in a bank view. Revisit. |
+| `coins` | 483 | yes (coffers only) | BF, NMZ, LMS, Miscellania, servant's moneybag, Shilo furnace, Bounty Hunter, Scar mine and GE buy offers, all as item 995 so they sum into the Coins slot. Upstream's inventory, looting bag and bank entries are not ported: carryable already tracks the first two, and a UIM has no bank. |
 | `minigames` | 1,143 | no | Points, not items. |
 | panels, export, Google API deps | 3,714 | no | Replaced by our overlay. |
 

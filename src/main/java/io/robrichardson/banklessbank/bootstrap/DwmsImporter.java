@@ -7,6 +7,8 @@ import io.robrichardson.banklessbank.tracking.ItemStorage;
 import io.robrichardson.banklessbank.tracking.Storage;
 import io.robrichardson.banklessbank.tracking.StorageManager;
 import io.robrichardson.banklessbank.tracking.StorageManagerManager;
+import io.robrichardson.banklessbank.tracking.coins.CoinsStorageManager;
+import io.robrichardson.banklessbank.tracking.coins.CoinsStorageType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -56,9 +58,15 @@ public class DwmsImporter
 	public static final String PLUGIN_MESSAGE_SOURCE = "Bankless Bank";
 	public static final String CONFIG_KEY_IMPORTED_AT = "dwmsImportedAt";
 
-	/** Config key prefixes to copy from DWMS. Coins, minigames and UI settings are skipped. */
+	/** Config key prefixes to copy from DWMS. Minigames and UI settings are skipped. */
 	static final List<String> IMPORTED_KEY_PREFIXES = List.of(
-		"carryable.", "death.", "poh.", "world.", "sailing.", "stash.", "minutesPlayed");
+		"carryable.", "coins.", "death.", "poh.", "world.", "sailing.", "stash.", "minutesPlayed");
+
+	/**
+	 * DWMS coin storages we have no counterpart for (see {@link CoinsStorageManager#UNTRACKED_TYPES}).
+	 * Nothing would ever load them, so copying them would only leave dead keys.
+	 */
+	static final Set<String> SKIPPED_KEYS = untrackedCoinKeys();
 
 	private static final int RESPONSE_TIMEOUT_TICKS = 10;
 
@@ -278,6 +286,10 @@ public class DwmsImporter
 
 	static boolean isImportedKey(String key)
 	{
+		if (SKIPPED_KEYS.contains(key))
+		{
+			return false;
+		}
 		for (String prefix : IMPORTED_KEY_PREFIXES)
 		{
 			if (key.startsWith(prefix))
@@ -286,6 +298,16 @@ public class DwmsImporter
 			}
 		}
 		return false;
+	}
+
+	private static Set<String> untrackedCoinKeys()
+	{
+		Set<String> keys = new HashSet<>();
+		for (CoinsStorageType type : CoinsStorageManager.UNTRACKED_TYPES)
+		{
+			keys.add("coins." + type.getConfigKey());
+		}
+		return keys;
 	}
 
 	/** Must be called every game tick so a missing DWMS response times out. */
