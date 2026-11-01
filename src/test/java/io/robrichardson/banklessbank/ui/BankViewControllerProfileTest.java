@@ -17,6 +17,7 @@ import io.robrichardson.banklessbank.model.LayoutStore;
 import io.robrichardson.banklessbank.tracking.ItemStack;
 import io.robrichardson.banklessbank.tracking.Storage;
 import io.robrichardson.banklessbank.tracking.StorageManagerManager;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.stream.Stream;
 import net.runelite.api.Client;
@@ -134,6 +135,33 @@ public class BankViewControllerProfileTest
 		controller.refresh();
 
 		verify(itemManager, atLeastOnce()).getItemComposition(5555);
+	}
+
+	@Test
+	public void clueStepsShareOneSlotPerTier()
+	{
+		when(config.placeholders()).thenReturn(true);
+
+		// Two different hard clue steps (both named "Clue scroll (hard)") plus an ordinary item,
+		// laid out by a version that gave every step its own slot.
+		Storage<?> storage = org.mockito.Mockito.mock(Storage.class);
+		when(storage.getItems()).thenReturn(Arrays.asList(
+			new ItemStack(3601, "Clue scroll (hard)", 1L, 0, 0, false),
+			new ItemStack(3602, "Clue scroll (hard)", 1L, 0, 0, false),
+			new ItemStack(5555, "Some Item", 1L, 0, 0, false)));
+		when(storage.getName()).thenReturn("Inventory");
+		when(storageManagerManager.getViewableStorages()).thenAnswer(inv -> Stream.of(storage));
+
+		BankLayout saved = new BankLayout();
+		saved.getMainTab().getSlots().addAll(Arrays.asList(3601, 3602, 5555));
+		when(plugin.getLoadedProfileKey()).thenReturn(PROFILE);
+		when(layoutStore.load(PROFILE)).thenReturn(saved);
+
+		controller.refresh();
+
+		BankViewModel model = controller.getViewModel();
+		assertEquals(Arrays.asList(2722, null, 5555), model.getLayout().getMainTab().getSlots());
+		assertEquals(new java.util.HashSet<>(Arrays.asList(2722, 5555)), model.getOwnedIds());
 	}
 
 	@Test

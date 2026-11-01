@@ -1446,4 +1446,71 @@ public class BankLayoutTest
 		assertFalse(layout.setTabIcon(other, 5));
 		assertTrue(layout.setTabIcon(layout.indexOfMainTab(), 5));
 	}
+
+	// ---- remapIds ----
+
+	@Test
+	public void remapFoldsVariantsIntoTheFirstSlotAndBlanksTheRest()
+	{
+		BankTab main = layout.getMainTab();
+		main.append(5);
+		main.append(101);
+		main.append(7);
+		main.append(102);
+		main.append(103);
+
+		assertTrue(layout.remapIds(id -> id > 100 ? 100 : id));
+
+		assertEquals(Arrays.asList(5, 100, 7), main.getSlots());
+	}
+
+	@Test
+	public void remapKeepsGapsBeforeLaterItems()
+	{
+		BankTab main = layout.getMainTab();
+		main.append(101);
+		main.append(102);
+		main.append(7);
+
+		layout.remapIds(id -> id > 100 ? 100 : id);
+
+		assertEquals(Arrays.asList(100, null, 7), main.getSlots());
+	}
+
+	@Test
+	public void remapFoldsPerTabSoEachTabKeepsItsOwnCopy()
+	{
+		layout.getMainTab().append(101);
+		int other = layout.createTabWith(102);
+
+		layout.remapIds(id -> id > 100 ? 100 : id);
+
+		assertEquals(Collections.singletonList(100), layout.getMainTab().getSlots());
+		assertEquals(Collections.singletonList(100), layout.getTabs().get(other).getSlots());
+	}
+
+	@Test
+	public void remapCarriesIconAndIgnoreListAcross()
+	{
+		BankTab main = layout.getMainTab();
+		main.append(5);
+		main.append(102);
+		layout.setTabIcon(layout.indexOfMainTab(), 102);
+		layout.addPlaceholderIgnore(101);
+		layout.addPlaceholderIgnore(102);
+
+		layout.remapIds(id -> id > 100 ? 100 : id);
+
+		assertEquals(100, main.getIcon());
+		assertEquals(setOf(100), layout.getPlaceholderIgnoreIds());
+	}
+
+	@Test
+	public void remapThatChangesNothingReportsNoChange()
+	{
+		layout.getMainTab().append(5);
+		layout.addPlaceholderIgnore(9);
+
+		assertFalse(layout.remapIds(id -> id));
+	}
 }

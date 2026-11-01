@@ -7,6 +7,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.IntUnaryOperator;
 import javax.annotation.Nullable;
 import lombok.Getter;
 
@@ -583,6 +584,66 @@ public class BankLayout
 	{
 		BankTab tab = getTab(tabIndex);
 		return tab != null && tab.widenTo(cols);
+	}
+
+	/**
+	 * Rewrites every id through {@code mapper}, for ids that have since been folded together (see
+	 * {@link ClueItems}). Within a tab the first slot to map to an id keeps it and any later slot
+	 * mapping to the same id is blanked, so per-tab uniqueness holds and nothing else moves. Tab
+	 * icons and the placeholder ignore list are mapped the same way.
+	 *
+	 * @return true if the layout changed
+	 */
+	public boolean remapIds(IntUnaryOperator mapper)
+	{
+		boolean changed = false;
+		for (BankTab tab : tabs)
+		{
+			List<Integer> slots = tab.getSlots();
+			Set<Integer> seenInTab = new HashSet<>();
+			for (int i = 0; i < slots.size(); i++)
+			{
+				Integer id = slots.get(i);
+				if (id == null)
+				{
+					continue;
+				}
+				int mapped = mapper.applyAsInt(id);
+				if (!seenInTab.add(mapped))
+				{
+					slots.set(i, null);
+					changed = true;
+				}
+				else if (mapped != id)
+				{
+					slots.set(i, mapped);
+					changed = true;
+				}
+			}
+			tab.trimTrailingNulls();
+
+			if (tab.getIcon() > 0)
+			{
+				int icon = mapper.applyAsInt(tab.getIcon());
+				if (icon != tab.getIcon())
+				{
+					tab.setIcon(icon);
+					changed = true;
+				}
+			}
+		}
+
+		Set<Integer> ignored = new LinkedHashSet<>();
+		for (int id : placeholderIgnoreIds)
+		{
+			ignored.add(mapper.applyAsInt(id));
+		}
+		if (!ignored.equals(placeholderIgnoreIds))
+		{
+			placeholderIgnoreIds = ignored;
+			changed = true;
+		}
+		return changed;
 	}
 
 	public Set<Integer> getPlaceholderIgnoreIds()
