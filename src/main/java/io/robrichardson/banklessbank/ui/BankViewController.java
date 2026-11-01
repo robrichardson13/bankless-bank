@@ -4,6 +4,7 @@ import io.robrichardson.banklessbank.BanklessBankConfig;
 import io.robrichardson.banklessbank.BanklessBankPlugin;
 import io.robrichardson.banklessbank.model.BankLayout;
 import io.robrichardson.banklessbank.model.BankTab;
+import io.robrichardson.banklessbank.model.ClueItems;
 import io.robrichardson.banklessbank.model.LayoutStore;
 import io.robrichardson.banklessbank.tracking.ItemStack;
 import io.robrichardson.banklessbank.tracking.StorageManager;
@@ -13,6 +14,7 @@ import java.awt.Point;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.IdentityHashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -258,7 +260,8 @@ public class BankViewController
 	/** Client thread. Adds a canonicalised id to the view and persists the layout if it changed. */
 	private void addItem(int itemId)
 	{
-		if (viewModel.addItem(itemManager.canonicalize(itemId)))
+		int canonical = itemManager.canonicalize(itemId);
+		if (viewModel.addItem(fold(canonical, nameOf(canonical))))
 		{
 			saveLayoutIfChanged();
 		}
@@ -575,7 +578,9 @@ public class BankViewController
 
 		plugin.getStorageManagerManager().getViewableStorages().forEach(storage ->
 		{
-			List<ItemSnapshot> items = new ArrayList<>();
+			// Keyed by folded id, so stacks in one storage that fold together (say, two hard
+			// caskets in the looting bag) render as one cell.
+			Map<Integer, ItemSnapshot> items = new LinkedHashMap<>();
 
 			for (ItemStack stack : storage.getItems())
 			{
@@ -590,9 +595,14 @@ public class BankViewController
 				{
 					name = nameOf(canonical);
 				}
-				items.add(new ItemSnapshot(canonical, name, stack.getQuantity(), stack.isStackable()));
+				int id = fold(canonical, name);
+				ItemSnapshot prior = items.get(id);
+				long quantity = stack.getQuantity() + (prior == null ? 0 : prior.getQuantity());
+				items.put(id, new ItemSnapshot(id, name, quantity, stack.isStackable()));
+				knownNames.put(id, name);
+				// The unfolded id too, so foldLayoutIds() can migrate a slot still holding it.
 				knownNames.put(canonical, name);
-				unitPrices.put(canonical, itemManager.getItemPrice(canonical));
+				unitPrices.put(id, itemManager.getItemPrice(id));
 			}
 
 			if (items.isEmpty() && !config.showEmptyStorages())
@@ -605,10 +615,12 @@ public class BankViewController
 				: null;
 
 			String category = categories.get(storage);
-			out.add(new StorageSnapshot(category == null ? "" : category, storage.getName(), subtitle, items));
+			out.add(new StorageSnapshot(category == null ? "" : category, storage.getName(), subtitle,
+				new ArrayList<>(items.values())));
 		});
 
 		seedPlaceholderNames();
+		foldLayoutIds();
 
 		viewModel.setKnownNames(knownNames);
 		viewModel.setUnitPrices(unitPrices);
@@ -648,6 +660,27 @@ public class BankViewController
 				unitPrices.put(id, itemManager.getItemPrice(id));
 			}
 		}));
+	}
+
+	/**
+	 * Migrates layouts saved before {@link ClueItems} existed, where every clue step the player
+	 * ever held kept its own slot. Runs after {@link #seedPlaceholderNames()}, so every layout id
+	 * already has a name and this costs no extra item lookups; once folded it finds nothing to do.
+	 */
+	private void foldLayoutIds()
+	{
+		if (viewModel.getLayout().remapIds(id -> fold(id, knownNames.get(id))))
+		{
+			viewModel.invalidate();
+			layoutDirty = true;
+		}
+	}
+
+	/** The id a canonical item is shown under: its tier's id for a clue step item, else itself. */
+	private static int fold(int canonicalId, String name)
+	{
+		int representative = ClueItems.representativeFor(name);
+		return representative > 0 ? representative : canonicalId;
 	}
 
 	/** Client thread only. */
